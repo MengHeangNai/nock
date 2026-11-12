@@ -10,5 +10,6 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/GlassDock "$APP/Contents/MacOS/GlassDock"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
+cp assets/icon.png "$APP/Contents/Resources/icon.png"
 codesign --force --sign - "$APP" >/dev/null
 echo "Built $(pwd)/$APP"
