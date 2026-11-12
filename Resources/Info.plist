@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDisplayName</key>
+	<string>GlassDock</string>
+	<key>CFBundleExecutable</key>
+	<string>GlassDock</string>
+	<key>CFBundleIdentifier</key>
+	<string>local.glassdock.app</string>
+	<key>CFBundleName</key>
+	<string>GlassDock</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>GlassDock controls playback in Music and Spotify, and shows and edits your notes from the Notes app.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>GlassDock shows your upcoming events and meeting links in the Island.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>GlassDock shows your upcoming events and meeting links in the Island.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>GlassDock lists your recent downloads in the Island.</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+</dict>
+</plist>
