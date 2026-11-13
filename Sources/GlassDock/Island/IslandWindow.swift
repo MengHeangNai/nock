@@ -10,6 +10,7 @@ final class IslandPanel: NSPanel {
 final class IslandWindowController {
     private let panel: IslandPanel
     private let state: IslandState
+    private let space = IslandSpace()
     private var ticker: Timer?
     private var clickMonitor: Any?
     private var hoverStart: Date?
@@ -23,6 +24,7 @@ final class IslandWindowController {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
+        panel.isFloatingPanel = true
         panel.level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 3)
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
         panel.becomesKeyOnlyIfNeeded = true
@@ -43,7 +45,7 @@ final class IslandWindowController {
     func show() {
         guard ticker == nil else { return }
         reposition()
-        panel.orderFrontRegardless()
+        bringToFront()
 
         let ticker = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in self?.tick() }
         RunLoop.main.add(ticker, forMode: .common)
@@ -131,7 +133,12 @@ final class IslandWindowController {
         if wasKey {
             // Hand keyboard focus back to the app the user was in.
             panel.orderOut(nil)
-            panel.orderFrontRegardless()
+            bringToFront()
         }
+    }
+
+    private func bringToFront() {
+        panel.orderFrontRegardless()
+        space?.add(panel)
     }
 }

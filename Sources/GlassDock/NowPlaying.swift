@@ -1,21 +1,45 @@
 import AppKit
 import SwiftUI
 
-/// Tracks what Music or Spotify is playing: title, artwork, position, and playback controls.
+/// Tracks what Music, Spotify or any other app (a browser tab, for example) is playing: title, artwork, position, and playback controls.
 final class NowPlayingMonitor: ObservableObject {
-    enum Player: String, CaseIterable {
-        case music = "com.apple.Music"
-        case spotify = "com.spotify.client"
+    struct Player: Equatable {
+        let bundleID: String
+        let displayName: String
 
-        var displayName: String {
-            switch self {
-            case .music: return "Apple Music"
-            case .spotify: return "Spotify"
-            }
-        }
+        static let music = Player(bundleID: "com.apple.Music", displayName: "Apple Music")
+        static let spotify = Player(bundleID: "com.spotify.client", displayName: "Spotify")
+        static let native = [music, spotify]
 
-        var appURL: URL? { NSWorkspace.shared.urlForApplication(withBundleIdentifier: rawValue) }
+        var isNative: Bool { Self.native.contains { $0.bundleID == bundleID } }
+
+        var appURL: URL? { NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) }
     }
+
+    private struct SystemSnapshot: Decodable {
+        let pid: Int32?
+        let playing: Bool?
+        let title: String?
+        let artist: String?
+        let album: String?
+        let duration: Double?
+        let elapsedTime: Double?
+        let timestamp: Double?
+        let artwork: String?
+    }
+
+    private enum SystemCommand: Int {
+        case togglePlayPause = 2
+        case next = 4
+        case previous = 5
+    }
+
+    private static let perlLoader = """
+    my $handle = DynaLoader::dl_load_file($ARGV[0], 0) or die "cannot load $ARGV[0]";
+    my $symbol = DynaLoader::dl_find_symbol($handle, $ARGV[1]) or die "missing $ARGV[1]";
+    DynaLoader::dl_install_xsub("main::run", $symbol);
+    run();
+    """
 
     static let defaultAccent = Color(nsColor: .systemPink)
 
@@ -36,11 +60,13 @@ final class NowPlayingMonitor: ObservableObject {
     @Published private(set) var anchorDate = Date()
 
     /// Players installed on this Mac, in menu order.
-    let installedPlayers: [Player] = Player.allCases.filter { $0.appURL != nil }
+    let installedPlayers: [Player] = Player.native.filter { $0.appURL != nil }
 
     private let scriptQueue = DispatchQueue(label: "GlassDock.AppleScript")
     private var syncTimer: Timer?
     private var artworkKey: String?
+    private var systemStream: Process?
+    private var systemBuffer = Data()
 
     init() {
         let distributed = DistributedNotificationCenter.default()
@@ -60,7 +86,10 @@ final class NowPlayingMonitor: ObservableObject {
             self.syncPosition()
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.queryRunningPlayers() }
+        startSystemStream()
     }
+
+    deinit { systemStream?.terminate() }
 
     func position(at date: Date = Date()) -> TimeInterval {
         let value = isPlaying ? positionAnchor + date.timeIntervalSince(anchorDate) : positionAnchor
@@ -79,11 +108,11 @@ final class NowPlayingMonitor: ObservableObject {
     @objc private func appTerminated(_ note: Notification) {
         refreshRunningPlayers()
         let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
-        if let id = app?.bundleIdentifier, id == player?.rawValue { clear() }
+        if let id = app?.bundleIdentifier, id == player?.bundleID { clear() }
     }
 
     private func refreshRunningPlayers() {
-        let running = Player.allCases.filter(isRunning)
+        let running = Player.native.filter(isRunning)
         if running != runningPlayers { runningPlayers = running }
     }
 
@@ -158,9 +187,9 @@ final class NowPlayingMonitor: ObservableObject {
 
     /// Reads the current track from players that are already running when GlassDock starts.
     private func queryRunningPlayers() {
-        for candidate in [Player.music, .spotify] where isRunning(candidate) {
+        for candidate in Player.native where isRunning(candidate) {
             let source = """
-            tell application id "\(candidate.rawValue)"
+            tell application id "\(candidate.bundleID)"
                 set s to player state as text
                 if s is "stopped" then return "stopped"
                 set t to current track
@@ -178,12 +207,12 @@ final class NowPlayingMonitor: ObservableObject {
 
     /// Asks the player for its exact position and the track length.
     private func syncPosition() {
-        guard let player, isRunning(player) else { return }
+        guard let player, player.isNative, isRunning(player) else { return }
         let durationExpression = player == .spotify
             ? "((duration of current track) / 1000)"
             : "(duration of current track)"
         let source = """
-        tell application id "\(player.rawValue)"
+        tell application id "\(player.bundleID)"
             return ((player position) as text) & linefeed & (\(durationExpression) as text)
         end tell
         """
@@ -231,6 +260,8 @@ final class NowPlayingMonitor: ObservableObject {
                       let data = descriptor?.data, let image = NSImage(data: data) else { return }
                 self.setArtwork(image)
             }
+        default:
+            break
         }
     }
 
@@ -277,7 +308,7 @@ final class NowPlayingMonitor: ObservableObject {
     // MARK: Controls
 
     private func isRunning(_ player: Player) -> Bool {
-        !NSRunningApplication.runningApplications(withBundleIdentifier: player.rawValue).isEmpty
+        !NSRunningApplication.runningApplications(withBundleIdentifier: player.bundleID).isEmpty
     }
 
     /// The player to use without asking: the one already playing, the only one open,
@@ -290,31 +321,38 @@ final class NowPlayingMonitor: ObservableObject {
     }
 
     func playPause() {
+        if let player, !player.isNative { send(.togglePlayPause); return }
         guard let target = automaticPlayer else { choosePlayer(); return }
         if isRunning(target) {
             if player == target { setPosition(position()) }
-            runScript("tell application id \"\(target.rawValue)\" to playpause")
+            runScript("tell application id \"\(target.bundleID)\" to playpause")
         } else {
             play(with: target)
         }
     }
 
     func next() {
+        if let player, !player.isNative { send(.next); return }
         guard let target = automaticPlayer ?? runningPlayers.first, isRunning(target) else { return }
-        runScript("tell application id \"\(target.rawValue)\" to next track")
+        runScript("tell application id \"\(target.bundleID)\" to next track")
     }
 
     func previous() {
+        if let player, !player.isNative { send(.previous); return }
         guard let target = automaticPlayer ?? runningPlayers.first, isRunning(target) else { return }
-        runScript("tell application id \"\(target.rawValue)\" to previous track")
+        runScript("tell application id \"\(target.bundleID)\" to previous track")
     }
 
     func seek(to seconds: TimeInterval) {
         guard let player, isRunning(player) else { return }
         let target = duration > 0 ? min(max(0, seconds), duration) : max(0, seconds)
         setPosition(target)
+        if !player.isNative {
+            runMediaRemote("glassdock_seek", environment: ["GLASSDOCK_MR_SECONDS": String(target)])
+            return
+        }
         let value = String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), target)
-        runScript("tell application id \"\(player.rawValue)\" to set player position to \(value)")
+        runScript("tell application id \"\(player.bundleID)\" to set player position to \(value)")
     }
 
     /// Clicking the artwork: bring the player forward, or pick one when it isn't obvious which.
@@ -329,7 +367,7 @@ final class NowPlayingMonitor: ObservableObject {
 
     /// Starts playback in the given player, opening it first if needed.
     func play(with target: Player) {
-        let script = "tell application id \"\(target.rawValue)\" to play"
+        let script = "tell application id \"\(target.bundleID)\" to play"
         if isRunning(target) {
             runScript(script)
             return
@@ -353,7 +391,7 @@ final class NowPlayingMonitor: ObservableObject {
         for candidate in installedPlayers {
             let item = NSMenuItem(title: candidate.displayName, action: #selector(playerChosen(_:)), keyEquivalent: "")
             item.target = self
-            item.representedObject = candidate.rawValue
+            item.representedObject = candidate.bundleID
             if let url = candidate.appURL, let icon = NSWorkspace.shared.icon(forFile: url.path).copy() as? NSImage {
                 icon.size = NSSize(width: 16, height: 16)
                 item.image = icon
@@ -364,8 +402,85 @@ final class NowPlayingMonitor: ObservableObject {
     }
 
     @objc private func playerChosen(_ item: NSMenuItem) {
-        guard let raw = item.representedObject as? String, let chosen = Player(rawValue: raw) else { return }
+        guard let raw = item.representedObject as? String, let chosen = Player.native.first(where: { $0.bundleID == raw }) else { return }
         play(with: chosen)
+    }
+
+    private func mediaRemoteProcess(_ symbol: String, environment: [String: String] = [:]) -> Process? {
+        guard let library = Bundle.main.executableURL?.deletingLastPathComponent()
+            .appendingPathComponent("libGlassDockMediaRemote.dylib"),
+            FileManager.default.fileExists(atPath: library.path) else { return nil }
+        let process = Process()
+        // macOS only lets Apple-signed processes use MediaRemote, so the helper library is loaded inside perl.
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/perl")
+        process.arguments = ["-MDynaLoader", "-e", Self.perlLoader, library.path, symbol]
+        process.environment = ProcessInfo.processInfo.environment.merging(environment) { $1 }
+        return process
+    }
+
+    private func runMediaRemote(_ symbol: String, environment: [String: String]) {
+        try? mediaRemoteProcess(symbol, environment: environment)?.run()
+    }
+
+    private func send(_ command: SystemCommand) {
+        runMediaRemote("glassdock_send", environment: ["GLASSDOCK_MR_COMMAND": String(command.rawValue)])
+    }
+
+    private func startSystemStream() {
+        guard let process = mediaRemoteProcess("glassdock_stream") else { return }
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            let chunk = handle.availableData
+            guard !chunk.isEmpty else {
+                handle.readabilityHandler = nil
+                return
+            }
+            DispatchQueue.main.async { self?.consumeSystemOutput(chunk) }
+        }
+        do {
+            try process.run()
+            systemStream = process
+        } catch {
+            NSLog("GlassDock MediaRemote error: \(error)")
+        }
+    }
+
+    private func consumeSystemOutput(_ chunk: Data) {
+        systemBuffer.append(chunk)
+        while let newline = systemBuffer.firstIndex(of: 0x0A) {
+            let line = systemBuffer[..<newline]
+            systemBuffer.removeSubrange(...newline)
+            update(fromSystem: try? JSONDecoder().decode(SystemSnapshot.self, from: line))
+        }
+    }
+
+    private func update(fromSystem snapshot: SystemSnapshot?) {
+        guard let snapshot, let pid = snapshot.pid,
+              let app = NSRunningApplication(processIdentifier: pid), let id = app.bundleIdentifier else {
+            if let player, !player.isNative { clear() }
+            return
+        }
+        guard !Player.native.contains(where: { $0.bundleID == id }) else { return }
+
+        let source = Player(bundleID: id, displayName: app.localizedName ?? id)
+        let playing = snapshot.playing ?? false
+        if player != source, !playing || isPlaying { return }
+
+        var info: [AnyHashable: Any] = ["Player State": playing ? "Playing" : "Paused"]
+        info["Name"] = snapshot.title
+        info["Artist"] = snapshot.artist
+        info["Album"] = snapshot.album
+        if let duration = snapshot.duration { info["Total Time"] = NSNumber(value: duration * 1000) }
+        if let elapsed = snapshot.elapsedTime {
+            let age = playing ? snapshot.timestamp.map { Date().timeIntervalSince1970 - $0 } ?? 0 : 0
+            info["Playback Position"] = NSNumber(value: elapsed + max(0, age))
+        }
+        update(from: info, player: source)
+
+        if let encoded = snapshot.artwork, let data = Data(base64Encoded: encoded), let image = NSImage(data: data) {
+            setArtwork(image)
+        }
     }
 
     // MARK: AppleScript

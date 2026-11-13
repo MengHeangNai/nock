@@ -95,7 +95,7 @@ struct IslandMetrics: Equatable {
         screenTop = frame.maxY
     }
 
-    var wingWidth: CGFloat { (notchHeight * 2.2).rounded() }
+    var wingWidth: CGFloat { (notchHeight * (hasNotch ? 1.6 : 2.2)).rounded() }
     var expandedSize: CGSize { CGSize(width: max(840, notchWidth + 640), height: notchHeight + 200) }
 }
 

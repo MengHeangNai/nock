@@ -24,6 +24,8 @@
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>GlassDock controls playback in Music and Spotify, and shows and edits your notes from the Notes app.</string>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>GlassDock measures the level of the sound playing on your Mac to animate the music bars in the Island. Nothing is recorded or sent.</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>
 	<string>GlassDock shows your upcoming events and meeting links in the Island.</string>
 	<key>NSCalendarsUsageDescription</key>

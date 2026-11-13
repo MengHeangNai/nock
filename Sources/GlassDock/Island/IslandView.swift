@@ -13,6 +13,7 @@ final class IslandContext {
     let clipboard: ClipboardStore
     let notes: NotesStore
     let stats: SystemStats
+    let audioLevels = AudioLevelMonitor()
     let calendar = CalendarService()
     let keepAwake = KeepAwake()
     let colors = ColorPickerStore()
@@ -123,7 +124,7 @@ struct IslandView: View {
     private func rightWing(_ live: LiveActivity) -> some View {
         switch live {
         case .music:
-            PlayingBars(color: nowPlaying.accentColor)
+            PlayingBars(color: nowPlaying.accentColor, audio: context.audioLevels)
         case .timer:
             TimelineView(.periodic(from: .now, by: 0.5)) { context in
                 Text(IslandTimer.format(timer.remaining(at: context.date)))
@@ -206,17 +207,26 @@ struct IslandView: View {
     }
 }
 
-/// Animated equalizer bars shown while music plays.
+/// Equalizer bars shown while music plays. They follow the sound being played, and loop on their own until it can be read.
 struct PlayingBars: View {
     var color: Color = .white
+    @ObservedObject var audio: AudioLevelMonitor
 
     var body: some View {
         HStack(alignment: .center, spacing: 2) {
-            ForEach(0..<4, id: \.self) { index in
-                PlayingBar(color: color, duration: [0.42, 0.55, 0.36, 0.5][index], low: 4, high: [12, 15, 10, 13][index])
+            ForEach(0..<AudioLevelMonitor.bandCount, id: \.self) { index in
+                if audio.isCapturing {
+                    Capsule()
+                        .fill(color)
+                        .frame(width: 3, height: 4 + 12 * audio.levels[index])
+                } else {
+                    PlayingBar(color: color, duration: [0.42, 0.55, 0.36, 0.5][index], low: 4, high: [12, 15, 10, 13][index])
+                }
             }
         }
         .frame(height: 16)
+        .onAppear { audio.start() }
+        .onDisappear { audio.stop() }
     }
 }
 
