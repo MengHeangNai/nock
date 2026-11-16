@@ -30,6 +30,7 @@ final class DockSettings: ObservableObject {
     @Published var enableDock: Bool { didSet { store.set(enableDock, forKey: Keys.enableDock) } }
     @Published var enableIsland: Bool { didSet { store.set(enableIsland, forKey: Keys.enableIsland) } }
     @Published var islandWithoutNotch: IslandWithoutNotchMode { didSet { store.set(islandWithoutNotch.rawValue, forKey: Keys.islandWithoutNotch) } }
+    @Published var hideIslandInFullScreen: Bool { didSet { store.set(hideIslandInFullScreen, forKey: Keys.hideIslandInFullScreen) } }
 
     private enum Keys {
         static let showSystemNotifications = "showSystemNotifications"
@@ -45,6 +46,7 @@ final class DockSettings: ObservableObject {
         static let enableDock = "enableDock"
         static let enableIsland = "enableIsland"
         static let islandWithoutNotch = "islandWithoutNotch"
+        static let hideIslandInFullScreen = "hideIslandInFullScreen"
         static let iconSize = "iconSize"
         static let magnification = "magnification"
         static let maxScale = "maxScale"
@@ -71,6 +73,7 @@ final class DockSettings: ObservableObject {
             Keys.hideSystemDock: false,
             Keys.enableDock: true,
             Keys.enableIsland: true,
+            Keys.hideIslandInFullScreen: false,
             Keys.animateOpening: true,
             Keys.showIndicators: true,
             Keys.showLyrics: true,
@@ -93,6 +96,7 @@ final class DockSettings: ObservableObject {
         enableDock = store.bool(forKey: Keys.enableDock)
         enableIsland = store.bool(forKey: Keys.enableIsland)
         islandWithoutNotch = store.string(forKey: Keys.islandWithoutNotch).flatMap(IslandWithoutNotchMode.init) ?? .alwaysShown
+        hideIslandInFullScreen = store.bool(forKey: Keys.hideIslandInFullScreen)
         iconSize = store.double(forKey: Keys.iconSize)
         magnification = store.bool(forKey: Keys.magnification)
         maxScale = store.double(forKey: Keys.maxScale)

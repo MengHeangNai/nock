@@ -125,6 +125,7 @@ final class IslandState: ObservableObject {
     @Published var expanded = false
     @Published var tab: IslandTab = .home
     @Published var metrics = IslandMetrics()
+    @Published var isHiddenForFullScreen = false
     @Published private(set) var chargingFlash = false
 
     private let nowPlaying: NowPlayingMonitor
@@ -164,7 +165,7 @@ final class IslandState: ObservableObject {
 
     var hud: HUDReading? { systemHUD.hud }
 
-    var notification: IslandNotification? { hud == nil ? notifications.current : nil }
+    var notification: IslandNotification? { hud == nil && !isHiddenForFullScreen ? notifications.current : nil }
 
     var live: LiveActivity? {
         if timer.didFinish { return .timerDone }

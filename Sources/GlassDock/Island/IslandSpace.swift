@@ -10,6 +10,11 @@ final class IslandSpace {
     private typealias ShowSpaces = @convention(c) (Int32, CFArray) -> Void
     private typealias MoveWindows = @convention(c) (Int32, CFArray, CFArray) -> Void
     private typealias DestroySpace = @convention(c) (Int32, Int) -> Void
+    private typealias CopyManagedDisplaySpaces = @convention(c) (Int32) -> Unmanaged<CFArray>?
+
+    private static let skyLightPath = "/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight"
+    private static let fullScreenSpaceType = 4
+    private static let sharedSpacesDisplayIdentifier = "Main"
 
     private let connection: Int32
     private let space: Int
@@ -19,7 +24,7 @@ final class IslandSpace {
     private var windowNumber: Int?
 
     init?() {
-        guard let handle = dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_NOW),
+        guard let handle = dlopen(Self.skyLightPath, RTLD_NOW),
               let mainConnection: MainConnection = Self.symbol(handle, "CGSMainConnectionID"),
               let createSpace: CreateSpace = Self.symbol(handle, "CGSSpaceCreate"),
               let setLevel: SetLevel = Self.symbol(handle, "CGSSpaceSetAbsoluteLevel"),
@@ -51,6 +56,25 @@ final class IslandSpace {
         guard window.windowNumber > 0 else { return }
         windowNumber = window.windowNumber
         addWindows(connection, [window.windowNumber] as CFArray, [space] as CFArray)
+    }
+
+    static func managedDisplaySpaces() -> [[String: Any]] {
+        guard let handle = dlopen(skyLightPath, RTLD_NOW),
+              let mainConnection: MainConnection = symbol(handle, "CGSMainConnectionID"),
+              let copySpaces: CopyManagedDisplaySpaces = symbol(handle, "CGSCopyManagedDisplaySpaces"),
+              let spaces = copySpaces(mainConnection())?.takeRetainedValue() as? [[String: Any]]
+        else { return [] }
+        return spaces
+    }
+
+    static func isFullScreen(displayUUID: String, in managedDisplaySpaces: [[String: Any]]) -> Bool {
+        managedDisplaySpaces.contains { display in
+            guard let identifier = display["Display Identifier"] as? String,
+                  identifier == sharedSpacesDisplayIdentifier || identifier.caseInsensitiveCompare(displayUUID) == .orderedSame,
+                  let currentSpace = display["Current Space"] as? [String: Any]
+            else { return false }
+            return currentSpace["type"] as? Int == fullScreenSpaceType
+        }
     }
 
     private static func symbol<T>(_ handle: UnsafeMutableRawPointer, _ name: String) -> T? {

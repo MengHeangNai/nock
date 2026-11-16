@@ -66,7 +66,7 @@ struct IslandView: View {
 
     private var isIdlePillHidden: Bool {
         !state.expanded && state.hud == nil && state.notification == nil
-            && !settings.islandWithoutNotch.showsIdlePill(hasNotch: state.metrics.hasNotch)
+            && (state.isHiddenForFullScreen || !settings.islandWithoutNotch.showsIdlePill(hasNotch: state.metrics.hasNotch))
     }
 
     var body: some View {

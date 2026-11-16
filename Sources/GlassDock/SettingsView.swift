@@ -22,6 +22,7 @@ struct SettingsView: View {
                 Picker("Island on displays without a notch", selection: $settings.islandWithoutNotch) {
                     ForEach(IslandWithoutNotchMode.allCases) { Text($0.title).tag($0) }
                 }
+                Toggle("Hide in full-screen apps", isOn: $settings.hideIslandInFullScreen)
                 Toggle("Show lyrics", isOn: $settings.showLyrics)
                 Toggle("Replace system volume & brightness HUD", isOn: $settings.replaceSystemHUD)
                 if settings.replaceSystemHUD {

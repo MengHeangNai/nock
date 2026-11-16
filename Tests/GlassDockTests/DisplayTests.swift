@@ -93,3 +93,42 @@ final class IslandWithoutNotchModeTests: XCTestCase {
         XCTAssertFalse(IslandWithoutNotchMode.off.showsIdlePill(hasNotch: false))
     }
 }
+
+final class IslandFullScreenTests: XCTestCase {
+    private let builtIn = "0A1B2C3D-0000-4000-8000-000000000001"
+    private let external = "0A1B2C3D-0000-4000-8000-000000000002"
+
+    private func display(_ identifier: String, spaceType: Int) -> [String: Any] {
+        ["Display Identifier": identifier, "Current Space": ["type": spaceType, "ManagedSpaceID": 42]]
+    }
+
+    func testADisplayShowingAFullScreenSpaceIsFullScreen() {
+        let spaces = [display(builtIn, spaceType: 4), display(external, spaceType: 0)]
+        XCTAssertTrue(IslandSpace.isFullScreen(displayUUID: builtIn, in: spaces))
+    }
+
+    func testOtherDisplaysAreUnaffected() {
+        let spaces = [display(builtIn, spaceType: 4), display(external, spaceType: 0)]
+        XCTAssertFalse(IslandSpace.isFullScreen(displayUUID: external, in: spaces))
+    }
+
+    func testADesktopSpaceIsNotFullScreen() {
+        XCTAssertFalse(IslandSpace.isFullScreen(displayUUID: builtIn, in: [display(builtIn, spaceType: 0)]))
+    }
+
+    func testTheDisplayIdentifierMatchesRegardlessOfCase() {
+        XCTAssertTrue(IslandSpace.isFullScreen(displayUUID: builtIn.lowercased(), in: [display(builtIn, spaceType: 4)]))
+    }
+
+    func testWithoutSeparateSpacesAFullScreenSpaceCoversEveryDisplay() {
+        let spaces = [display("Main", spaceType: 4)]
+        XCTAssertTrue(IslandSpace.isFullScreen(displayUUID: builtIn, in: spaces))
+        XCTAssertTrue(IslandSpace.isFullScreen(displayUUID: external, in: spaces))
+    }
+
+    func testMissingOrMalformedSpacesAreNeverFullScreen() {
+        XCTAssertFalse(IslandSpace.isFullScreen(displayUUID: builtIn, in: []))
+        XCTAssertFalse(IslandSpace.isFullScreen(displayUUID: builtIn, in: [["Display Identifier": builtIn]]))
+        XCTAssertFalse(IslandSpace.isFullScreen(displayUUID: builtIn, in: [["Current Space": ["type": 4]]]))
+    }
+}

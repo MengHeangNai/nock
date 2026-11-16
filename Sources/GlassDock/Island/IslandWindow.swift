@@ -14,6 +14,7 @@ final class IslandWindowController {
     private var ticker: Timer?
     private var clickMonitor: Any?
     private var modeObserver: AnyCancellable?
+    private var fullScreenObserver: AnyCancellable?
 
     init(context: IslandContext) {
         self.context = context
@@ -25,6 +26,19 @@ final class IslandWindowController {
         modeObserver = context.settings.$islandWithoutNotch
             .removeDuplicates()
             .sink { [weak self] _ in DispatchQueue.main.async { self?.sync() } }
+        fullScreenObserver = context.settings.$hideIslandInFullScreen
+            .removeDuplicates()
+            .sink { [weak self] _ in DispatchQueue.main.async { self?.updateFullScreen() } }
+
+        let workspaceCenter = NSWorkspace.shared.notificationCenter
+        workspaceCenter.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification,
+                                    object: nil, queue: .main) { [weak self] _ in
+            self?.updateFullScreen()
+        }
+        workspaceCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification,
+                                    object: nil, queue: .main) { [weak self] _ in
+            self?.updateFullScreen()
+        }
     }
 
     func show() {
@@ -67,6 +81,15 @@ final class IslandWindowController {
         for screen in screens {
             let window = windows[screen.displayID] ?? makeWindow(for: screen)
             window.reposition(on: screen)
+        }
+        updateFullScreen()
+    }
+
+    private func updateFullScreen() {
+        let spaces = context.settings.hideIslandInFullScreen ? IslandSpace.managedDisplaySpaces() : []
+        for (id, window) in windows {
+            let uuid = CGDisplayCreateUUIDFromDisplayID(id).map { CFUUIDCreateString(nil, $0.takeRetainedValue()) as String }
+            window.hideForFullScreen(uuid.map { IslandSpace.isFullScreen(displayUUID: $0, in: spaces) } ?? false)
         }
     }
 
@@ -138,7 +161,7 @@ final class IslandDisplayWindow {
     func tick() {
         let mouse = NSEvent.mouseLocation
         let now = Date()
-        let inside = islandRect.insetBy(dx: -6, dy: -6).contains(mouse)
+        let inside = !state.isHiddenForFullScreen && islandRect.insetBy(dx: -6, dy: -6).contains(mouse)
 
         if inside {
             lastInside = now
@@ -173,6 +196,12 @@ final class IslandDisplayWindow {
         hoverStart = nil
         state.expanded = true
         onExpand(self)
+    }
+
+    func hideForFullScreen(_ hidden: Bool) {
+        guard state.isHiddenForFullScreen != hidden else { return }
+        if hidden, state.expanded { collapse() }
+        state.isHiddenForFullScreen = hidden
     }
 
     func collapse() {
