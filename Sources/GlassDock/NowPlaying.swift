@@ -51,6 +51,7 @@ final class NowPlayingMonitor: ObservableObject {
     @Published private(set) var playerIcon: NSImage?
     @Published private(set) var artwork: NSImage?
     @Published private(set) var accentColor = NowPlayingMonitor.defaultAccent
+    @Published private(set) var palette = VisualizerPalette.neutral
     /// Track length in seconds; 0 while unknown.
     @Published private(set) var duration: TimeInterval = 0
     @Published private(set) var runningPlayers: [Player] = []
@@ -160,6 +161,7 @@ final class NowPlayingMonitor: ObservableObject {
 
         if trackChanged {
             artwork = nil
+            palette = .neutral
             updateAccent(from: nil)
             loadArtwork()
         }
@@ -181,6 +183,7 @@ final class NowPlayingMonitor: ObservableObject {
         artwork = nil
         artworkKey = nil
         accentColor = Self.defaultAccent
+        palette = .neutral
         duration = 0
         setPosition(0)
     }
@@ -267,6 +270,7 @@ final class NowPlayingMonitor: ObservableObject {
 
     private func setArtwork(_ image: NSImage) {
         artwork = image
+        palette = image.cgImage(forProposedRect: nil, context: nil, hints: nil).flatMap(VisualizerPalette.init(image:)) ?? .neutral
         updateAccent(from: image)
     }
 

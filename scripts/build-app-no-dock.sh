@@ -17,5 +17,5 @@ cp assets/icon.png "$APP/Contents/Resources/icon.png"
 /usr/libexec/PlistBuddy -c "Set :CFBundleName GlassDock-NoDock" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName GlassDock (No Dock)" "$APP/Contents/Info.plist"
 defaults write "$BUNDLE_ID" enableDock -bool false
-codesign --force --sign - "$APP" >/dev/null
+./scripts/sign-app.sh "$APP" "$BUNDLE_ID"
 echo "Built $(pwd)/$APP with GlassDock Dock disabled by default"

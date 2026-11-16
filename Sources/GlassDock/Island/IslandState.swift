@@ -3,7 +3,7 @@ import Combine
 
 enum IslandTab: String, CaseIterable, Identifiable {
     case home, nowPlaying, lyrics, timer, battery, upNext, shelf, clipboard, notes
-    case terminal, aiUsage, colorPicker, keepAwake, downloads, devices, stats
+    case terminal, aiUsage, colorPicker, keepAwake, downloads, devices, stats, windows
 
     var id: String { rawValue }
 
@@ -32,6 +32,7 @@ enum IslandTab: String, CaseIterable, Identifiable {
         case .downloads: return "arrow.down.circle"
         case .devices: return "headphones"
         case .stats: return "chart.xyaxis.line"
+        case .windows: return "pin.fill"
         }
     }
 
@@ -53,6 +54,7 @@ enum IslandTab: String, CaseIterable, Identifiable {
         case .downloads: return "Downloads"
         case .devices: return "Devices"
         case .stats: return "Stats"
+        case .windows: return "Windows"
         }
     }
 }
@@ -94,6 +96,8 @@ struct IslandMetrics: Equatable {
     }
 
     var wingWidth: CGFloat { (notchHeight * (hasNotch ? 1.6 : 2.2)).rounded() }
+    var petWingWidth: CGFloat { (notchHeight * (hasNotch ? 0.95 : 1.3)).rounded() }
+    var petSize: CGSize { CGSize(width: notchWidth + petWingWidth * 2, height: notchHeight) }
     var expandedSize: CGSize { CGSize(width: max(840, notchWidth + 640), height: notchHeight + 200) }
     var hudSize: CGSize { CGSize(width: 300, height: notchHeight + 66) }
     var notificationSize: CGSize { CGSize(width: 300, height: notchHeight + 58) }
@@ -128,6 +132,7 @@ final class IslandState: ObservableObject {
     @Published var isHiddenForFullScreen = false
     @Published private(set) var chargingFlash = false
 
+    private let settings: DockSettings
     private let nowPlaying: NowPlayingMonitor
     private let timer: IslandTimer
     private let battery: BatteryMonitor
@@ -137,8 +142,9 @@ final class IslandState: ObservableObject {
     private var chargingWork: DispatchWorkItem?
     private var timerDoneWork: DispatchWorkItem?
 
-    init(nowPlaying: NowPlayingMonitor, timer: IslandTimer, battery: BatteryMonitor, systemHUD: SystemHUDController,
-         notifications: SystemNotificationController) {
+    init(settings: DockSettings, nowPlaying: NowPlayingMonitor, timer: IslandTimer, battery: BatteryMonitor,
+         systemHUD: SystemHUDController, notifications: SystemNotificationController) {
+        self.settings = settings
         self.nowPlaying = nowPlaying
         self.timer = timer
         self.battery = battery
@@ -175,6 +181,15 @@ final class IslandState: ObservableObject {
         return nil
     }
 
+    var isIdlePillHidden: Bool {
+        !expanded && hud == nil && notification == nil
+            && (isHiddenForFullScreen || !settings.islandWithoutNotch.showsIdlePill(hasNotch: metrics.hasNotch))
+    }
+
+    var showsPet: Bool {
+        settings.showNotchPet && !expanded && hud == nil && notification == nil && live == nil && !isIdlePillHidden
+    }
+
     var size: CGSize {
         if expanded { return metrics.expandedSize }
         if hud != nil { return metrics.hudSize }
@@ -182,6 +197,7 @@ final class IslandState: ObservableObject {
         if live != nil {
             return CGSize(width: metrics.notchWidth + metrics.wingWidth * 2, height: metrics.notchHeight)
         }
+        if showsPet { return metrics.petSize }
         return CGSize(width: metrics.notchWidth, height: metrics.notchHeight)
     }
 

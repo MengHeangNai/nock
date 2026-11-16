@@ -59,6 +59,10 @@ final class IslandWindowController {
         }
     }
 
+    func closePiPs() {
+        context.pip.closeAll()
+    }
+
     func hide() {
         isShown = false
         context.systemHUD.stop()
@@ -72,7 +76,7 @@ final class IslandWindowController {
 
     private func sync() {
         let mode = context.settings.islandWithoutNotch
-        let screens = isShown ? NSScreen.screens.filter { mode.showsIsland(hasNotch: IslandMetrics(screen: $0).hasNotch) } : []
+        let screens = isShown ? NSScreen.physicalScreens.filter { mode.showsIsland(hasNotch: IslandMetrics(screen: $0).hasNotch) } : []
         let wanted = Set(screens.map(\.displayID))
 
         for id in windows.keys where !wanted.contains(id) {
@@ -112,8 +116,9 @@ final class IslandDisplayWindow {
 
     init(context: IslandContext, onExpand: @escaping (IslandDisplayWindow) -> Void) {
         self.onExpand = onExpand
-        state = IslandState(nowPlaying: context.nowPlaying, timer: context.timer, battery: context.battery,
-                            systemHUD: context.systemHUD, notifications: context.notifications)
+        state = IslandState(settings: context.settings, nowPlaying: context.nowPlaying, timer: context.timer,
+                            battery: context.battery, systemHUD: context.systemHUD,
+                            notifications: context.notifications)
 
         panel = IslandPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel],
                             backing: .buffered, defer: false)

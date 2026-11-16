@@ -30,11 +30,13 @@ struct HomeDashboard: View {
     @ObservedObject var nowPlaying: NowPlayingMonitor
     @ObservedObject var calendar: CalendarService
     @ObservedObject var battery: BatteryMonitor
+    let settings: DockSettings
+    let pet: NotchPetMonitor
     let state: IslandState
 
     var body: some View {
         HStack(spacing: 20) {
-            HomeNowPlaying(nowPlaying: nowPlaying, state: state)
+            HomeNowPlaying(nowPlaying: nowPlaying, settings: settings, pet: pet, state: state)
                 .frame(maxWidth: .infinity)
 
             Rectangle()
@@ -61,6 +63,8 @@ struct HomeDashboard: View {
 
 private struct HomeNowPlaying: View {
     @ObservedObject var nowPlaying: NowPlayingMonitor
+    @ObservedObject var settings: DockSettings
+    @ObservedObject var pet: NotchPetMonitor
     let state: IslandState
 
     var body: some View {
@@ -87,6 +91,12 @@ private struct HomeNowPlaying: View {
                     control("backward.fill", size: 15, action: nowPlaying.previous)
                     control(nowPlaying.isPlaying ? "pause.fill" : "play.fill", size: 22, action: nowPlaying.playPause)
                     control("forward.fill", size: 15, action: nowPlaying.next)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .overlay(alignment: .trailing) {
+                    if settings.showNotchPet && nowPlaying.isPlaying {
+                        NotchPetView(mood: pet.mood, stage: pet.stage, size: 28)
+                    }
                 }
                 .padding(.top, 6)
             }

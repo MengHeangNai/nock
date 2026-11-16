@@ -12,5 +12,5 @@ cp .build/release/GlassDock "$APP/Contents/MacOS/GlassDock"
 cp .build/release/libGlassDockMediaRemote.dylib "$APP/Contents/MacOS/libGlassDockMediaRemote.dylib"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp assets/icon.png "$APP/Contents/Resources/icon.png"
-codesign --force --sign - "$APP" >/dev/null
+./scripts/sign-app.sh "$APP" "$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/Contents/Info.plist")"
 echo "Built $(pwd)/$APP"

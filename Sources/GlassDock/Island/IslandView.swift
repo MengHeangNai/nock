@@ -21,6 +21,9 @@ final class IslandContext {
     let devices = DevicesService()
     let aiUsage = AIUsageService()
     let terminal = TerminalSession()
+    let pet: NotchPetMonitor
+    let pinnedWindows = PinnedWindowController()
+    let pip: PiPController
 
     init(settings: DockSettings, nowPlaying: NowPlayingMonitor, battery: BatteryMonitor,
          lyrics: LyricsService, timer: IslandTimer, shelf: ShelfStore, clipboard: ClipboardStore,
@@ -37,6 +40,8 @@ final class IslandContext {
         self.stats = stats
         self.systemHUD = systemHUD
         self.notifications = notifications
+        pet = NotchPetMonitor(settings: settings, nowPlaying: nowPlaying, battery: battery, shelf: shelf)
+        pip = PiPController(settings: settings)
     }
 }
 
@@ -48,6 +53,7 @@ struct IslandView: View {
     @ObservedObject private var timer: IslandTimer
     @ObservedObject private var systemHUD: SystemHUDController
     @ObservedObject private var notifications: SystemNotificationController
+    @ObservedObject private var pet: NotchPetMonitor
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(context: IslandContext, state: IslandState) {
@@ -58,15 +64,11 @@ struct IslandView: View {
         _timer = ObservedObject(wrappedValue: context.timer)
         _systemHUD = ObservedObject(wrappedValue: context.systemHUD)
         _notifications = ObservedObject(wrappedValue: context.notifications)
+        _pet = ObservedObject(wrappedValue: context.pet)
     }
 
     private var visibleTabs: [IslandTab] {
         IslandTab.allCases.filter { $0 == .home || !settings.hiddenIslandTabs.contains($0.rawValue) }
-    }
-
-    private var isIdlePillHidden: Bool {
-        !state.expanded && state.hud == nil && state.notification == nil
-            && (state.isHiddenForFullScreen || !settings.islandWithoutNotch.showsIdlePill(hasNotch: state.metrics.hasNotch))
     }
 
     var body: some View {
@@ -87,8 +89,11 @@ struct IslandView: View {
             } else if let notification = state.notification {
                 notificationContent(notification, metrics: metrics)
                     .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.9, anchor: .top)))
-            } else if let live = state.live, !isIdlePillHidden {
+            } else if let live = state.live, !state.isIdlePillHidden {
                 collapsedContent(live, metrics: metrics)
+                    .transition(.opacity)
+            } else if state.showsPet {
+                petContent(metrics)
                     .transition(.opacity)
             }
         }
@@ -97,7 +102,7 @@ struct IslandView: View {
         .clipShape(shape)
         .contentShape(shape)
         .shadow(color: .black.opacity(state.expanded ? 0.45 : 0), radius: 16, y: 6)
-        .opacity(isIdlePillHidden ? 0 : 1)
+        .opacity(state.isIdlePillHidden ? 0 : 1)
         .onTapGesture {
             if timer.didFinish { timer.dismissFinished() }
         }
@@ -111,6 +116,7 @@ struct IslandView: View {
         .environment(\.colorScheme, .dark)
         .animation(.spring(response: 0.38, dampingFraction: 0.8), value: state.expanded)
         .animation(.spring(response: 0.38, dampingFraction: 0.8), value: state.live)
+        .animation(.spring(response: 0.38, dampingFraction: 0.8), value: state.showsPet)
         .animation(.spring(response: 0.38, dampingFraction: 0.8), value: state.hud != nil)
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.42, dampingFraction: 0.72),
                    value: state.notification != nil)
@@ -141,6 +147,15 @@ struct IslandView: View {
             Spacer(minLength: metrics.notchWidth)
             rightWing(live)
                 .frame(width: metrics.wingWidth)
+        }
+        .frame(height: metrics.notchHeight)
+    }
+
+    private func petContent(_ metrics: IslandMetrics) -> some View {
+        HStack(spacing: 0) {
+            NotchPetView(mood: pet.mood, stage: pet.stage, size: metrics.notchHeight * 0.78)
+                .frame(width: metrics.petWingWidth)
+            Spacer(minLength: metrics.notchWidth)
         }
         .frame(height: metrics.notchHeight)
     }
@@ -244,9 +259,12 @@ struct IslandView: View {
     private func tabContent(_ tab: IslandTab) -> some View {
         let c = context
         switch tab {
-        case .home: HomeDashboard(nowPlaying: c.nowPlaying, calendar: c.calendar, battery: c.battery, state: state)
-        case .nowPlaying: NowPlayingTab(nowPlaying: c.nowPlaying, lyrics: c.lyrics, timer: c.timer, state: state)
-        case .lyrics: LyricsTab(nowPlaying: c.nowPlaying, lyrics: c.lyrics)
+        case .home:
+            HomeDashboard(nowPlaying: c.nowPlaying, calendar: c.calendar, battery: c.battery,
+                          settings: c.settings, pet: c.pet, state: state)
+        case .nowPlaying: NowPlayingTab(nowPlaying: c.nowPlaying, lyrics: c.lyrics, timer: c.timer, settings: c.settings,
+                                       audio: c.audioLevels, state: state)
+        case .lyrics: LyricsTab(nowPlaying: c.nowPlaying, lyrics: c.lyrics, settings: c.settings)
         case .timer: TimerTab(timer: c.timer)
         case .battery: BatteryTab(battery: c.battery)
         case .upNext: UpNextTab(calendar: c.calendar)
@@ -260,6 +278,7 @@ struct IslandView: View {
         case .downloads: DownloadsTab(downloads: c.downloads)
         case .devices: DevicesTab(devices: c.devices, battery: c.battery)
         case .stats: StatsTab(stats: c.stats)
+        case .windows: WindowsTab(controller: c.pinnedWindows, pip: c.pip)
         }
     }
 }

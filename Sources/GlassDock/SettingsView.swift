@@ -23,6 +23,8 @@ struct SettingsView: View {
                     ForEach(IslandWithoutNotchMode.allCases) { Text($0.title).tag($0) }
                 }
                 Toggle("Hide in full-screen apps", isOn: $settings.hideIslandInFullScreen)
+                Toggle("Show notch pet", isOn: $settings.showNotchPet)
+                Toggle("Show music visualizer", isOn: $settings.showVisualizer)
                 Toggle("Show lyrics", isOn: $settings.showLyrics)
                 Toggle("Replace system volume & brightness HUD", isOn: $settings.replaceSystemHUD)
                 if settings.replaceSystemHUD {
@@ -36,6 +38,14 @@ struct SettingsView: View {
                         .padding(.leading, 20)
                     Toggle("Battery low and fully charged", isOn: $settings.notifyBattery)
                         .padding(.leading, 20)
+                }
+                Toggle(isOn: $settings.pipKeepLive) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Keep PiP windows playing (experimental)")
+                        Text("Off by default, experimental. Moves the real window to a hidden screen while its PiP is open.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 Toggle("Show Claude Code plan limits", isOn: $settings.claudeLimitsEnabled)
             } header: {

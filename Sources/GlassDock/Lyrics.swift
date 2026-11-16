@@ -39,9 +39,16 @@ final class LyricsService: ObservableObject {
             .store(in: &cancellables)
     }
 
+    static let lookahead: TimeInterval = 0.3
+
     /// Index of the line being sung at the given position.
     func lineIndex(at position: TimeInterval) -> Int? {
-        let target = position + 0.3
+        Self.lineIndex(in: lines, at: position)
+    }
+
+    /// Index of the line being sung at the given position, in lines sorted by time.
+    static func lineIndex(in lines: [LyricLine], at position: TimeInterval) -> Int? {
+        let target = position + lookahead
         var low = 0
         var high = lines.count - 1
         var result: Int?

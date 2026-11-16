@@ -6,6 +6,8 @@ struct NowPlayingTab: View {
     @ObservedObject var nowPlaying: NowPlayingMonitor
     @ObservedObject var lyrics: LyricsService
     @ObservedObject var timer: IslandTimer
+    @ObservedObject var settings: DockSettings
+    let audio: AudioLevelMonitor
     let state: IslandState
 
     var body: some View {
@@ -34,6 +36,10 @@ struct NowPlayingTab: View {
                     CurrentLyricLine(nowPlaying: nowPlaying, lyrics: lyrics)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+
+                if settings.showVisualizer {
+                    MusicVisualizer(nowPlaying: nowPlaying, settings: settings, audio: audio)
+                }
 
                 if timer.isActive {
                     Button { state.tab = .timer } label: {
@@ -243,6 +249,7 @@ struct PlaybackProgress: View {
 struct LyricsTab: View {
     @ObservedObject var nowPlaying: NowPlayingMonitor
     @ObservedObject var lyrics: LyricsService
+    @ObservedObject var settings: DockSettings
 
     var body: some View {
         if nowPlaying.player == nil {
@@ -259,7 +266,7 @@ struct LyricsTab: View {
     private var lyricsContent: some View {
         switch lyrics.status {
         case .synced:
-            SyncedLyricsView(nowPlaying: nowPlaying, lyrics: lyrics)
+            syncedContent
         case .plain:
             ScrollView(showsIndicators: false) {
                 Text(lyrics.plainText ?? "")
@@ -276,6 +283,31 @@ struct LyricsTab: View {
         case .idle:
             message("Play a song to see its lyrics")
         }
+    }
+
+    private var syncedContent: some View {
+        ZStack(alignment: .topTrailing) {
+            switch settings.lyricsMode {
+            case .karaoke: KaraokeLyricsView(nowPlaying: nowPlaying, lyrics: lyrics)
+            case .list: SyncedLyricsView(nowPlaying: nowPlaying, lyrics: lyrics)
+            }
+            modeButton
+        }
+    }
+
+    private var modeButton: some View {
+        let target = settings.lyricsMode.next
+        return Button { settings.lyricsMode = target } label: {
+            Image(systemName: target.symbol)
+                .font(.system(size: 11, weight: .semibold))
+                .frame(width: 24, height: 24)
+                .background(Color.white.opacity(0.12), in: Circle())
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .padding(6)
+        .hoverLabel("\(target.title) view", edge: .bottom, anchor: .trailing)
+        .accessibilityLabel("Show lyrics as \(target.title.lowercased())")
     }
 
     private func message(_ text: String, spinner: Bool = false) -> some View {

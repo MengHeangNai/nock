@@ -70,6 +70,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        islandWindow?.closePiPs()
         systemHUD.stop()
         if SystemDock.isHiddenByGlassDock {
             SystemDock.restore()

@@ -31,6 +31,13 @@ final class DockSettings: ObservableObject {
     @Published var enableIsland: Bool { didSet { store.set(enableIsland, forKey: Keys.enableIsland) } }
     @Published var islandWithoutNotch: IslandWithoutNotchMode { didSet { store.set(islandWithoutNotch.rawValue, forKey: Keys.islandWithoutNotch) } }
     @Published var hideIslandInFullScreen: Bool { didSet { store.set(hideIslandInFullScreen, forKey: Keys.hideIslandInFullScreen) } }
+    @Published var showNotchPet: Bool { didSet { store.set(showNotchPet, forKey: Keys.showNotchPet) } }
+    @Published var showVisualizer: Bool { didSet { store.set(showVisualizer, forKey: Keys.showVisualizer) } }
+    @Published var visualizerStyle: VisualizerStyle { didSet { store.set(visualizerStyle.rawValue, forKey: Keys.visualizerStyle) } }
+    @Published var lyricsMode: LyricsViewMode { didSet { store.set(lyricsMode.rawValue, forKey: Keys.lyricsMode) } }
+    @Published var pipKeepLive: Bool { didSet { store.set(pipKeepLive, forKey: Keys.pipKeepLive) } }
+
+    let firstLaunchDate: Date
 
     private enum Keys {
         static let showSystemNotifications = "showSystemNotifications"
@@ -47,6 +54,12 @@ final class DockSettings: ObservableObject {
         static let enableIsland = "enableIsland"
         static let islandWithoutNotch = "islandWithoutNotch"
         static let hideIslandInFullScreen = "hideIslandInFullScreen"
+        static let showNotchPet = "showNotchPet"
+        static let showVisualizer = "showVisualizer"
+        static let visualizerStyle = "visualizerStyle"
+        static let lyricsMode = "lyricsMode"
+        static let pipKeepLive = "pipKeepLive"
+        static let firstLaunchDate = "firstLaunchDate"
         static let iconSize = "iconSize"
         static let magnification = "magnification"
         static let maxScale = "maxScale"
@@ -74,9 +87,12 @@ final class DockSettings: ObservableObject {
             Keys.enableDock: true,
             Keys.enableIsland: true,
             Keys.hideIslandInFullScreen: false,
+            Keys.showNotchPet: true,
+            Keys.showVisualizer: true,
             Keys.animateOpening: true,
             Keys.showIndicators: true,
             Keys.showLyrics: true,
+            Keys.pipKeepLive: false,
             Keys.replaceSystemHUD: true,
             Keys.showSystemNotifications: true,
             Keys.notifyBluetooth: true,
@@ -84,6 +100,7 @@ final class DockSettings: ObservableObject {
             Keys.notifyBattery: true,
         ])
         showLyrics = store.bool(forKey: Keys.showLyrics)
+        pipKeepLive = store.bool(forKey: Keys.pipKeepLive)
         replaceSystemHUD = store.bool(forKey: Keys.replaceSystemHUD)
         showSystemNotifications = store.bool(forKey: Keys.showSystemNotifications)
         notifyBluetooth = store.bool(forKey: Keys.notifyBluetooth)
@@ -97,6 +114,16 @@ final class DockSettings: ObservableObject {
         enableIsland = store.bool(forKey: Keys.enableIsland)
         islandWithoutNotch = store.string(forKey: Keys.islandWithoutNotch).flatMap(IslandWithoutNotchMode.init) ?? .alwaysShown
         hideIslandInFullScreen = store.bool(forKey: Keys.hideIslandInFullScreen)
+        showNotchPet = store.bool(forKey: Keys.showNotchPet)
+        showVisualizer = store.bool(forKey: Keys.showVisualizer)
+        visualizerStyle = store.string(forKey: Keys.visualizerStyle).flatMap(VisualizerStyle.init) ?? .bars
+        lyricsMode = store.string(forKey: Keys.lyricsMode).flatMap(LyricsViewMode.init) ?? .karaoke
+        if let saved = store.object(forKey: Keys.firstLaunchDate) as? Date {
+            firstLaunchDate = saved
+        } else {
+            firstLaunchDate = Date()
+            store.set(firstLaunchDate, forKey: Keys.firstLaunchDate)
+        }
         iconSize = store.double(forKey: Keys.iconSize)
         magnification = store.bool(forKey: Keys.magnification)
         maxScale = store.double(forKey: Keys.maxScale)

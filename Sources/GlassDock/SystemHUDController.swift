@@ -157,7 +157,7 @@ final class SystemHUDController: ObservableObject {
 
     private func displayUnderCursor() -> CGDirectDisplayID? {
         let mouse = NSEvent.mouseLocation
-        return NSScreen.screens.first { $0.frame.contains(mouse) }?.displayID
+        return NSScreen.physicalScreens.first { $0.frame.contains(mouse) }?.displayID
     }
 
     private func show(_ reading: HUDReading) {

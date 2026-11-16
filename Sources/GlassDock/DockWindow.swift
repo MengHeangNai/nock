@@ -64,7 +64,7 @@ final class DockWindowController {
     }
 
     private func sync() {
-        let screens = isShown ? NSScreen.screens : []
+        let screens = isShown ? NSScreen.physicalScreens : []
         let wanted = settings.dockDisplays.displayIDs(among: screens.map(\.displayID))
 
         for id in windows.keys where !wanted.contains(id) {
