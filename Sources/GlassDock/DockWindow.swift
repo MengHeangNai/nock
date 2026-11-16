@@ -23,12 +23,75 @@ final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
 }
 
 final class DockWindowController {
+    private let model: DockModel
+    private let settings: DockSettings
+    private let nowPlaying: NowPlayingMonitor
+    private let battery: BatteryMonitor
+    private var windows: [CGDirectDisplayID: DockDisplayWindow] = [:]
+    private var isShown = false
+    private var timer: Timer?
+    private var cancellables = Set<AnyCancellable>()
+
+    init(model: DockModel, settings: DockSettings, nowPlaying: NowPlayingMonitor, battery: BatteryMonitor) {
+        self.model = model
+        self.settings = settings
+        self.nowPlaying = nowPlaying
+        self.battery = battery
+
+        NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
+                                               object: nil, queue: .main) { [weak self] _ in
+            self?.sync()
+        }
+        settings.objectWillChange
+            .sink { [weak self] _ in DispatchQueue.main.async { self?.sync() } }
+            .store(in: &cancellables)
+    }
+
+    func show() {
+        guard !isShown else { return }
+        isShown = true
+        sync()
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in self?.tick() }
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
+    }
+
+    func hide() {
+        isShown = false
+        timer?.invalidate()
+        timer = nil
+        sync()
+    }
+
+    private func sync() {
+        let screens = isShown ? NSScreen.screens : []
+        let wanted = settings.dockDisplays.displayIDs(among: screens.map(\.displayID))
+
+        for id in windows.keys where !wanted.contains(id) {
+            windows.removeValue(forKey: id)?.close()
+        }
+        for screen in screens where wanted.contains(screen.displayID) {
+            let window = windows[screen.displayID] ?? makeWindow(for: screen)
+            window.reposition(on: screen)
+        }
+    }
+
+    private func makeWindow(for screen: NSScreen) -> DockDisplayWindow {
+        let window = DockDisplayWindow(model: model, settings: settings, nowPlaying: nowPlaying, battery: battery)
+        windows[screen.displayID] = window
+        return window
+    }
+
+    private func tick() {
+        for window in windows.values { window.tick() }
+    }
+}
+
+final class DockDisplayWindow {
     private let panel: DockPanel
     private let state = DockState()
     private let settings: DockSettings
-    private var timer: Timer?
     private var lastActivity = Date()
-    private var cancellables = Set<AnyCancellable>()
 
     init(model: DockModel, settings: DockSettings, nowPlaying: NowPlayingMonitor, battery: BatteryMonitor) {
         self.settings = settings
@@ -42,6 +105,7 @@ final class DockWindowController {
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
         panel.isMovable = false
         panel.hidesOnDeactivate = false
+        panel.isReleasedWhenClosed = false
         panel.ignoresMouseEvents = true
 
         let root = DockView(model: model, settings: settings, state: state,
@@ -49,45 +113,25 @@ final class DockWindowController {
         let host = FirstMouseHostingView(rootView: root)
         host.sizingOptions = []
         panel.contentView = host
-
-        NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
-                                               object: nil, queue: .main) { [weak self] _ in
-            self?.reposition()
-        }
-        settings.objectWillChange
-            .sink { [weak self] _ in DispatchQueue.main.async { self?.reposition() } }
-            .store(in: &cancellables)
     }
 
-    func show() {
-        guard timer == nil else { return }
-        reposition()
-        panel.orderFrontRegardless()
-        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in self?.tick() }
-        RunLoop.main.add(timer, forMode: .common)
-        self.timer = timer
-    }
-
-    func hide() {
-        timer?.invalidate()
-        timer = nil
-        state.mouseX = nil
-        panel.orderOut(nil)
-    }
-
-    private func reposition() {
-        guard let screen = NSScreen.screens.first else { return }
+    func reposition(on screen: NSScreen) {
         let scale = settings.magnification ? settings.maxScale : 1
         let height = DockLayout.windowHeight(iconSize: settings.iconSize, maxScale: scale)
         let frame = NSRect(x: screen.frame.minX, y: screen.frame.minY, width: screen.frame.width, height: height)
         if panel.frame != frame {
             panel.setFrame(frame, display: true)
         }
+        if !panel.isVisible { panel.orderFrontRegardless() }
+    }
+
+    func close() {
+        panel.close()
     }
 
     /// Polls the cursor so the dock can magnify, auto-hide, and let clicks fall through
     /// the transparent parts of its full-width window.
-    private func tick() {
+    func tick() {
         if state.menuOpen {
             lastActivity = Date()
             return
@@ -106,7 +150,8 @@ final class DockWindowController {
         let inside = state.revealed && hit.contains(local)
 
         if settings.autoHide {
-            let atBottomEdge = mouse.y <= frame.minY + 1 && mouse.x >= frame.minX && mouse.x <= frame.maxX
+            let atBottomEdge = mouse.y >= frame.minY && mouse.y <= frame.minY + 1
+                && mouse.x >= frame.minX && mouse.x <= frame.maxX
             if inside || atBottomEdge {
                 lastActivity = Date()
                 if !state.revealed { state.revealed = true }

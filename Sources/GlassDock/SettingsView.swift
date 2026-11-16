@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 struct SettingsView: View {
     @ObservedObject var settings: DockSettings
     @ObservedObject var model: DockModel
+    @ObservedObject var systemHUD: SystemHUDController
     @State private var openAtLogin = SMAppService.mainApp.status == .enabled
     @State private var windowAccess = AppWindows.isTrusted
     @State private var recentsAccess = RecentDocuments.isAccessible
@@ -18,12 +19,28 @@ struct SettingsView: View {
             }
 
             Section {
+                Picker("Island on displays without a notch", selection: $settings.islandWithoutNotch) {
+                    ForEach(IslandWithoutNotchMode.allCases) { Text($0.title).tag($0) }
+                }
                 Toggle("Show lyrics", isOn: $settings.showLyrics)
+                Toggle("Replace system volume & brightness HUD", isOn: $settings.replaceSystemHUD)
+                if settings.replaceSystemHUD {
+                    hudAccessRow
+                }
+                Toggle("Show system event notifications", isOn: $settings.showSystemNotifications)
+                if settings.showSystemNotifications {
+                    Toggle("Bluetooth devices connecting and disconnecting", isOn: $settings.notifyBluetooth)
+                        .padding(.leading, 20)
+                    Toggle("Wi-Fi connecting, disconnecting and turning off", isOn: $settings.notifyWiFi)
+                        .padding(.leading, 20)
+                    Toggle("Battery low and fully charged", isOn: $settings.notifyBattery)
+                        .padding(.leading, 20)
+                }
                 Toggle("Show Claude Code plan limits", isOn: $settings.claudeLimitsEnabled)
             } header: {
                 Text("Island")
             } footer: {
-                Text("Lyrics are looked up on lrclib.net, a free lyrics library. Only the song's title, artist, album and length are sent. Plan limits use the sign-in Claude Code keeps in your Keychain (macOS asks first) and are requested only from Anthropic.")
+                Text("Lyrics are looked up on lrclib.net, a free lyrics library. Only the song's title, artist, album and length are sent. Plan limits use the sign-in Claude Code keeps in your Keychain (macOS asks first) and are requested only from Anthropic. System event notifications use only the status macOS reports for Bluetooth, Wi-Fi and the battery; macOS may ask once to allow Bluetooth.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -42,7 +59,6 @@ struct SettingsView: View {
                 }
             }
 
-            // Mirrors System Settings → Desktop & Dock.
             Section("Dock") {
                 Slider(value: $settings.iconSize, in: 32...96) {
                     Text("Size")
@@ -60,6 +76,9 @@ struct SettingsView: View {
                     Text("Large").font(.caption)
                 }
                 .disabled(!settings.magnification)
+                Picker("Show Dock on", selection: $settings.dockDisplays) {
+                    ForEach(DockDisplayMode.allCases) { Text($0.title).tag($0) }
+                }
                 Toggle("Automatically hide and show the Dock", isOn: $settings.autoHide)
                 Toggle("Animate opening applications", isOn: $settings.animateOpening)
                 Toggle("Show indicators for open applications", isOn: $settings.showIndicators)
@@ -143,6 +162,44 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .frame(width: 480, height: 640)
+    }
+
+    @ViewBuilder
+    private var hudAccessRow: some View {
+        switch systemHUD.access {
+        case .settingOff:
+            EmptyView()
+        case .islandOff:
+            Text("Turn on the Island module to use this.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        case .replacing:
+            Label("Active. The volume, brightness and keyboard backlight keys show in the Island instead of the macOS overlay.",
+                  systemImage: "checkmark.circle.fill")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        case .needsAccessibility:
+            hudAccessPrompt("Needs Accessibility access in Privacy & Security to take over the keys. Until then macOS keeps its own overlay.",
+                            pane: "Privacy_Accessibility", prompts: true)
+        case .tapRefused:
+            hudAccessPrompt("macOS did not allow GlassDock to watch the keys. Allow GlassDock in Privacy & Security → Input Monitoring. Until then macOS keeps its own overlay.",
+                            pane: "Privacy_ListenEvent", prompts: false)
+        }
+    }
+
+    private func hudAccessPrompt(_ message: String, pane: String, prompts: Bool) -> some View {
+        HStack {
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Button("Open Settings…") {
+                if prompts { AppWindows.requestAccess() }
+                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)") {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+        }
     }
 
     private func pinnedRow(path: String, index: Int) -> some View {

@@ -72,9 +72,18 @@ final class ClipboardStore: ObservableObject {
     }
 
     func copy(_ item: Item) {
+        write(item.text)
+    }
+
+    /// Puts a transformed copy of the item on the pasteboard. The next poll adds it to the history.
+    func copy(_ item: Item, transformedBy transform: ClipboardTransform) -> Result<Void, ClipboardTransform.Failure> {
+        transform.apply(to: item.text).map(write)
+    }
+
+    private func write(_ text: String) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        pasteboard.setString(item.text, forType: .string)
+        pasteboard.setString(text, forType: .string)
     }
 
     func togglePin(_ item: Item) {

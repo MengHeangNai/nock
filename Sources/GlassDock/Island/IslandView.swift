@@ -1,9 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Everything the island's tabs use, created once when the app starts.
 final class IslandContext {
-    let state: IslandState
     let settings: DockSettings
     let nowPlaying: NowPlayingMonitor
     let battery: BatteryMonitor
@@ -13,6 +11,8 @@ final class IslandContext {
     let clipboard: ClipboardStore
     let notes: NotesStore
     let stats: SystemStats
+    let systemHUD: SystemHUDController
+    let notifications: SystemNotificationController
     let audioLevels = AudioLevelMonitor()
     let calendar = CalendarService()
     let keepAwake = KeepAwake()
@@ -22,10 +22,10 @@ final class IslandContext {
     let aiUsage = AIUsageService()
     let terminal = TerminalSession()
 
-    init(state: IslandState, settings: DockSettings, nowPlaying: NowPlayingMonitor, battery: BatteryMonitor,
+    init(settings: DockSettings, nowPlaying: NowPlayingMonitor, battery: BatteryMonitor,
          lyrics: LyricsService, timer: IslandTimer, shelf: ShelfStore, clipboard: ClipboardStore,
-         notes: NotesStore, stats: SystemStats) {
-        self.state = state
+         notes: NotesStore, stats: SystemStats, systemHUD: SystemHUDController,
+         notifications: SystemNotificationController) {
         self.settings = settings
         self.nowPlaying = nowPlaying
         self.battery = battery
@@ -35,6 +35,8 @@ final class IslandContext {
         self.clipboard = clipboard
         self.notes = notes
         self.stats = stats
+        self.systemHUD = systemHUD
+        self.notifications = notifications
     }
 }
 
@@ -44,31 +46,48 @@ struct IslandView: View {
     @ObservedObject private var settings: DockSettings
     @ObservedObject private var nowPlaying: NowPlayingMonitor
     @ObservedObject private var timer: IslandTimer
+    @ObservedObject private var systemHUD: SystemHUDController
+    @ObservedObject private var notifications: SystemNotificationController
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    init(context: IslandContext) {
+    init(context: IslandContext, state: IslandState) {
         self.context = context
-        _state = ObservedObject(wrappedValue: context.state)
+        _state = ObservedObject(wrappedValue: state)
         _settings = ObservedObject(wrappedValue: context.settings)
         _nowPlaying = ObservedObject(wrappedValue: context.nowPlaying)
         _timer = ObservedObject(wrappedValue: context.timer)
+        _systemHUD = ObservedObject(wrappedValue: context.systemHUD)
+        _notifications = ObservedObject(wrappedValue: context.notifications)
     }
 
     private var visibleTabs: [IslandTab] {
         IslandTab.allCases.filter { $0 == .home || !settings.hiddenIslandTabs.contains($0.rawValue) }
     }
 
+    private var isIdlePillHidden: Bool {
+        !state.expanded && state.hud == nil && state.notification == nil
+            && !settings.islandWithoutNotch.showsIdlePill(hasNotch: state.metrics.hasNotch)
+    }
+
     var body: some View {
         let metrics = state.metrics
         let size = state.size
-        let radius = state.expanded ? 28 : metrics.notchHeight * 0.32
+        let radius = state.expanded || state.hud != nil || state.notification != nil ? 28 : metrics.notchHeight * 0.32
         let shape = UnevenRoundedRectangle(bottomLeadingRadius: radius, bottomTrailingRadius: radius,
                                            style: .continuous)
 
         ZStack(alignment: .top) {
             if state.expanded {
                 expandedContent(metrics)
+                    .overlay(alignment: .top) { expandedOverlay(metrics) }
                     .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
-            } else if let live = state.live {
+            } else if let reading = state.hud {
+                hudContent(reading, metrics: metrics)
+                    .transition(.opacity)
+            } else if let notification = state.notification {
+                notificationContent(notification, metrics: metrics)
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.9, anchor: .top)))
+            } else if let live = state.live, !isIdlePillHidden {
                 collapsedContent(live, metrics: metrics)
                     .transition(.opacity)
             }
@@ -78,6 +97,7 @@ struct IslandView: View {
         .clipShape(shape)
         .contentShape(shape)
         .shadow(color: .black.opacity(state.expanded ? 0.45 : 0), radius: 16, y: 6)
+        .opacity(isIdlePillHidden ? 0 : 1)
         .onTapGesture {
             if timer.didFinish { timer.dismissFinished() }
         }
@@ -91,9 +111,28 @@ struct IslandView: View {
         .environment(\.colorScheme, .dark)
         .animation(.spring(response: 0.38, dampingFraction: 0.8), value: state.expanded)
         .animation(.spring(response: 0.38, dampingFraction: 0.8), value: state.live)
+        .animation(.spring(response: 0.38, dampingFraction: 0.8), value: state.hud != nil)
+        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.42, dampingFraction: 0.72),
+                   value: state.notification != nil)
     }
 
-    // MARK: Collapsed
+    private func hudContent(_ reading: HUDReading, metrics: IslandMetrics) -> some View {
+        VStack(spacing: 0) {
+            Color.clear.frame(height: metrics.notchHeight)
+            HUDView(reading: reading)
+                .padding(.horizontal, 24)
+                .frame(maxHeight: .infinity)
+        }
+    }
+
+    private func notificationContent(_ notification: IslandNotification, metrics: IslandMetrics) -> some View {
+        VStack(spacing: 0) {
+            Color.clear.frame(height: metrics.notchHeight)
+            NotificationView(notification: notification)
+                .padding(.horizontal, 24)
+                .frame(maxHeight: .infinity)
+        }
+    }
 
     private func collapsedContent(_ live: LiveActivity, metrics: IslandMetrics) -> some View {
         HStack(spacing: 0) {
@@ -139,7 +178,25 @@ struct IslandView: View {
         }
     }
 
-    // MARK: Expanded
+    @ViewBuilder
+    private func expandedOverlay(_ metrics: IslandMetrics) -> some View {
+        if let reading = state.hud {
+            floatingCard(metrics) { HUDView(reading: reading) }
+        } else if let notification = state.notification {
+            floatingCard(metrics) { NotificationView(notification: notification) }
+        }
+    }
+
+    private func floatingCard<Content: View>(_ metrics: IslandMetrics, @ViewBuilder content: () -> Content) -> some View {
+        content()
+            .padding(.horizontal, 20)
+            .padding(.vertical, 14)
+            .frame(width: metrics.hudSize.width)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .shadow(color: .black.opacity(0.4), radius: 14, y: 6)
+            .padding(.top, metrics.notchHeight + 10)
+            .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.94, anchor: .top)))
+    }
 
     private func expandedContent(_ metrics: IslandMetrics) -> some View {
         let tabs = visibleTabs
@@ -187,8 +244,8 @@ struct IslandView: View {
     private func tabContent(_ tab: IslandTab) -> some View {
         let c = context
         switch tab {
-        case .home: HomeDashboard(nowPlaying: c.nowPlaying, calendar: c.calendar, battery: c.battery, state: c.state)
-        case .nowPlaying: NowPlayingTab(nowPlaying: c.nowPlaying, lyrics: c.lyrics, timer: c.timer, state: c.state)
+        case .home: HomeDashboard(nowPlaying: c.nowPlaying, calendar: c.calendar, battery: c.battery, state: state)
+        case .nowPlaying: NowPlayingTab(nowPlaying: c.nowPlaying, lyrics: c.lyrics, timer: c.timer, state: state)
         case .lyrics: LyricsTab(nowPlaying: c.nowPlaying, lyrics: c.lyrics)
         case .timer: TimerTab(timer: c.timer)
         case .battery: BatteryTab(battery: c.battery)
@@ -207,7 +264,6 @@ struct IslandView: View {
     }
 }
 
-/// Equalizer bars shown while music plays. They follow the sound being played, and loop on their own until it can be read.
 struct PlayingBars: View {
     var color: Color = .white
     @ObservedObject var audio: AudioLevelMonitor

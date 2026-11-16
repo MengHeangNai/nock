@@ -1,4 +1,6 @@
 import AppKit
+import CoreWLAN
+import IOBluetooth
 import IOKit.ps
 
 // MARK: - Battery
@@ -135,5 +137,97 @@ enum SystemDock {
         process.waitUntilExit()
         guard process.terminationStatus == 0 else { return nil }
         return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+final class BluetoothMonitor: NSObject {
+    var onNotification: ((IslandNotification) -> Void)?
+
+    private var tracker = BluetoothConnectionTracker()
+    private var connectToken: IOBluetoothUserNotification?
+    private var disconnectTokens: [String: IOBluetoothUserNotification] = [:]
+
+    func start() {
+        guard connectToken == nil else { return }
+        let connected = (IOBluetoothDevice.pairedDevices() as? [IOBluetoothDevice] ?? []).filter { $0.isConnected() }
+        tracker.seed(connected.compactMap(\.addressString))
+        connected.forEach(watchDisconnect)
+        connectToken = IOBluetoothDevice.register(forConnectNotifications: self, selector: #selector(deviceConnected(_:device:)))
+    }
+
+    func stop() {
+        connectToken?.unregister()
+        connectToken = nil
+        disconnectTokens.values.forEach { $0.unregister() }
+        disconnectTokens = [:]
+    }
+
+    @objc private func deviceConnected(_ token: IOBluetoothUserNotification, device: IOBluetoothDevice) {
+        watchDisconnect(device)
+        report(device, isConnected: true)
+    }
+
+    @objc private func deviceDisconnected(_ token: IOBluetoothUserNotification, device: IOBluetoothDevice) {
+        if let address = device.addressString { disconnectTokens.removeValue(forKey: address)?.unregister() }
+        report(device, isConnected: false)
+    }
+
+    private func watchDisconnect(_ device: IOBluetoothDevice) {
+        guard let address = device.addressString else { return }
+        disconnectTokens[address]?.unregister()
+        disconnectTokens[address] = device.register(forDisconnectNotification: self, selector: #selector(deviceDisconnected(_:device:)))
+    }
+
+    private func report(_ device: IOBluetoothDevice, isConnected: Bool) {
+        guard let address = device.addressString else { return }
+        let isChange = isConnected ? tracker.didConnect(address) : tracker.didDisconnect(address)
+        guard isChange else { return }
+        let name = device.nameOrAddress ?? "Bluetooth device"
+        let kind = BluetoothDeviceKind(name: name, major: UInt32(device.deviceClassMajor), minor: UInt32(device.deviceClassMinor))
+        onNotification?(.bluetooth(address: address, name: name, kind: kind, isConnected: isConnected))
+    }
+}
+
+final class WiFiMonitor: NSObject, CWEventDelegate {
+    private static let settleSeconds: TimeInterval = 1.5
+
+    var onChange: ((WiFiState) -> Void)?
+
+    private let client = CWWiFiClient.shared()
+    private var settleWork: DispatchWorkItem?
+
+    var state: WiFiState? {
+        guard let interface = client.interface() else { return nil }
+        guard interface.powerOn() else { return .off }
+        return interface.interfaceMode() == .station && interface.wlanChannel() != nil ? .connected : .disconnected
+    }
+
+    func start() {
+        client.delegate = self
+        try? client.startMonitoringEvent(with: .powerDidChange)
+        try? client.startMonitoringEvent(with: .linkDidChange)
+    }
+
+    func stop() {
+        settleWork?.cancel()
+        settleWork = nil
+        try? client.stopMonitoringAllEvents()
+        client.delegate = nil
+    }
+
+    func powerStateDidChangeForWiFiInterface(withName interfaceName: String) { settle() }
+
+    func linkDidChangeForWiFiInterface(withName interfaceName: String) { settle() }
+
+    private func settle() {
+        DispatchQueue.main.async {
+            self.settleWork?.cancel()
+            let work = DispatchWorkItem { [weak self] in
+                guard let state = self?.state else { return }
+                self?.onChange?(state)
+            }
+            self.settleWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.settleSeconds, execute: work)
+        }
     }
 }

@@ -2,9 +2,7 @@ import AppKit
 import Combine
 
 enum IslandTab: String, CaseIterable, Identifiable {
-    // Left of the notch
     case home, nowPlaying, lyrics, timer, battery, upNext, shelf, clipboard, notes
-    // Right of the notch
     case terminal, aiUsage, colorPicker, keepAwake, downloads, devices, stats
 
     var id: String { rawValue }
@@ -59,7 +57,6 @@ enum IslandTab: String, CaseIterable, Identifiable {
     }
 }
 
-/// Something shown in the "wings" beside the notch while the island is collapsed.
 enum LiveActivity: Equatable {
     case timerDone
     case charging(Int)
@@ -67,7 +64,6 @@ enum LiveActivity: Equatable {
     case music
 }
 
-/// Notch geometry for one screen. On Macs without a notch, a pill in the menu bar stands in for it.
 struct IslandMetrics: Equatable {
     var notchWidth: CGFloat = 150
     var notchHeight: CGFloat = 32
@@ -78,18 +74,20 @@ struct IslandMetrics: Equatable {
     init() {}
 
     init(screen: NSScreen) {
-        let frame = screen.frame
-        if screen.safeAreaInsets.top > 0,
-           let left = screen.auxiliaryTopLeftArea,
-           let right = screen.auxiliaryTopRightArea {
+        self.init(frame: screen.frame, visibleFrame: screen.visibleFrame, safeAreaTop: screen.safeAreaInsets.top,
+                  topLeftWidth: screen.auxiliaryTopLeftArea?.width, topRightWidth: screen.auxiliaryTopRightArea?.width)
+    }
+
+    init(frame: CGRect, visibleFrame: CGRect, safeAreaTop: CGFloat, topLeftWidth: CGFloat?, topRightWidth: CGFloat?) {
+        if safeAreaTop > 0, let topLeftWidth, let topRightWidth {
             hasNotch = true
-            notchWidth = frame.width - left.width - right.width
-            notchHeight = screen.safeAreaInsets.top
-            centerX = frame.midX + (left.width - right.width) / 2
+            notchWidth = frame.width - topLeftWidth - topRightWidth
+            notchHeight = safeAreaTop
+            centerX = frame.midX + (topLeftWidth - topRightWidth) / 2
         } else {
             hasNotch = false
             notchWidth = 150
-            notchHeight = max(frame.maxY - screen.visibleFrame.maxY, 24)
+            notchHeight = max(frame.maxY - visibleFrame.maxY, 24)
             centerX = frame.midX
         }
         screenTop = frame.maxY
@@ -97,6 +95,30 @@ struct IslandMetrics: Equatable {
 
     var wingWidth: CGFloat { (notchHeight * (hasNotch ? 1.6 : 2.2)).rounded() }
     var expandedSize: CGSize { CGSize(width: max(840, notchWidth + 640), height: notchHeight + 200) }
+    var hudSize: CGSize { CGSize(width: 300, height: notchHeight + 66) }
+    var notificationSize: CGSize { CGSize(width: 300, height: notchHeight + 58) }
+}
+
+enum IslandWithoutNotchMode: String, CaseIterable, Identifiable {
+    case alwaysShown, onHover, off
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .alwaysShown: return "Always shown"
+        case .onHover: return "Show on hover"
+        case .off: return "Off"
+        }
+    }
+
+    func showsIsland(hasNotch: Bool) -> Bool {
+        hasNotch || self != .off
+    }
+
+    func showsIdlePill(hasNotch: Bool) -> Bool {
+        hasNotch || self == .alwaysShown
+    }
 }
 
 final class IslandState: ObservableObject {
@@ -108,16 +130,20 @@ final class IslandState: ObservableObject {
     private let nowPlaying: NowPlayingMonitor
     private let timer: IslandTimer
     private let battery: BatteryMonitor
+    private let systemHUD: SystemHUDController
+    private let notifications: SystemNotificationController
     private var cancellables = Set<AnyCancellable>()
     private var chargingWork: DispatchWorkItem?
     private var timerDoneWork: DispatchWorkItem?
 
-    init(nowPlaying: NowPlayingMonitor, timer: IslandTimer, battery: BatteryMonitor) {
+    init(nowPlaying: NowPlayingMonitor, timer: IslandTimer, battery: BatteryMonitor, systemHUD: SystemHUDController,
+         notifications: SystemNotificationController) {
         self.nowPlaying = nowPlaying
         self.timer = timer
         self.battery = battery
+        self.systemHUD = systemHUD
+        self.notifications = notifications
 
-        // Briefly show the charge level when the power cable is connected.
         battery.$isPluggedIn
             .removeDuplicates()
             .dropFirst()
@@ -125,7 +151,6 @@ final class IslandState: ObservableObject {
             .sink { [weak self] _ in self?.flashCharging() }
             .store(in: &cancellables)
 
-        // Dismiss the "timer done" alert by itself after a while.
         timer.$didFinish
             .filter { $0 }
             .sink { [weak self] _ in
@@ -137,6 +162,10 @@ final class IslandState: ObservableObject {
             .store(in: &cancellables)
     }
 
+    var hud: HUDReading? { systemHUD.hud }
+
+    var notification: IslandNotification? { hud == nil ? notifications.current : nil }
+
     var live: LiveActivity? {
         if timer.didFinish { return .timerDone }
         if chargingFlash { return .charging(battery.level ?? 0) }
@@ -147,6 +176,8 @@ final class IslandState: ObservableObject {
 
     var size: CGSize {
         if expanded { return metrics.expandedSize }
+        if hud != nil { return metrics.hudSize }
+        if notification != nil { return metrics.notificationSize }
         if live != nil {
             return CGSize(width: metrics.notchWidth + metrics.wingWidth * 2, height: metrics.notchHeight)
         }

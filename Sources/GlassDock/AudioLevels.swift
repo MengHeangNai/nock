@@ -15,6 +15,7 @@ final class AudioLevelMonitor: ObservableObject {
     private let control = DispatchQueue(label: "GlassDock.AudioLevels.control")
     private let audioQueue = DispatchQueue(label: "GlassDock.AudioLevels.audio", qos: .userInteractive)
     private var capture: AnyObject?
+    private var users = 0
 
     init() {
         NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification,
@@ -26,6 +27,7 @@ final class AudioLevelMonitor: ObservableObject {
     func start() {
         guard #available(macOS 14.2, *) else { return }
         control.async { [self] in
+            users += 1
             guard capture == nil else { return }
             capture = SystemAudioTap(queue: audioQueue) { [weak self] levels in
                 DispatchQueue.main.async { self?.levels = levels }
@@ -37,6 +39,8 @@ final class AudioLevelMonitor: ObservableObject {
 
     func stop() {
         control.async { [self] in
+            users = max(users - 1, 0)
+            guard users == 0 else { return }
             capture = nil
             DispatchQueue.main.async {
                 self.isCapturing = false

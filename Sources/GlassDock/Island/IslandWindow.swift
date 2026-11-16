@@ -1,23 +1,96 @@
 import AppKit
+import Combine
 import SwiftUI
 
 final class IslandPanel: NSPanel {
-    // Can take keyboard focus (for notes and clipboard search) without activating the app.
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 }
 
 final class IslandWindowController {
-    private let panel: IslandPanel
-    private let state: IslandState
-    private let space = IslandSpace()
+    private let context: IslandContext
+    private var windows: [CGDirectDisplayID: IslandDisplayWindow] = [:]
+    private var isShown = false
     private var ticker: Timer?
     private var clickMonitor: Any?
+    private var modeObserver: AnyCancellable?
+
+    init(context: IslandContext) {
+        self.context = context
+
+        NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
+                                               object: nil, queue: .main) { [weak self] _ in
+            self?.sync()
+        }
+        modeObserver = context.settings.$islandWithoutNotch
+            .removeDuplicates()
+            .sink { [weak self] _ in DispatchQueue.main.async { self?.sync() } }
+    }
+
+    func show() {
+        guard !isShown else { return }
+        isShown = true
+        context.systemHUD.start()
+        context.notifications.start()
+        sync()
+
+        let ticker = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+            self?.windows.values.forEach { $0.tick() }
+        }
+        RunLoop.main.add(ticker, forMode: .common)
+        self.ticker = ticker
+
+        clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            self?.windows.values.forEach { $0.handleOutsideClick() }
+        }
+    }
+
+    func hide() {
+        isShown = false
+        context.systemHUD.stop()
+        context.notifications.stop()
+        ticker?.invalidate()
+        ticker = nil
+        if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
+        clickMonitor = nil
+        sync()
+    }
+
+    private func sync() {
+        let mode = context.settings.islandWithoutNotch
+        let screens = isShown ? NSScreen.screens.filter { mode.showsIsland(hasNotch: IslandMetrics(screen: $0).hasNotch) } : []
+        let wanted = Set(screens.map(\.displayID))
+
+        for id in windows.keys where !wanted.contains(id) {
+            windows.removeValue(forKey: id)?.close()
+        }
+        for screen in screens {
+            let window = windows[screen.displayID] ?? makeWindow(for: screen)
+            window.reposition(on: screen)
+        }
+    }
+
+    private func makeWindow(for screen: NSScreen) -> IslandDisplayWindow {
+        let window = IslandDisplayWindow(context: context) { [weak self] opened in
+            self?.windows.values.filter { $0 !== opened }.forEach { $0.collapse() }
+        }
+        windows[screen.displayID] = window
+        return window
+    }
+}
+
+final class IslandDisplayWindow {
+    private let panel: IslandPanel
+    private let state: IslandState
+    private var space = IslandSpace()
+    private let onExpand: (IslandDisplayWindow) -> Void
     private var hoverStart: Date?
     private var lastInside = Date.distantPast
 
-    init(context: IslandContext) {
-        self.state = context.state
+    init(context: IslandContext, onExpand: @escaping (IslandDisplayWindow) -> Void) {
+        self.onExpand = onExpand
+        state = IslandState(nowPlaying: context.nowPlaying, timer: context.timer, battery: context.battery,
+                            systemHUD: context.systemHUD, notifications: context.notifications)
 
         panel = IslandPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel],
                             backing: .buffered, defer: false)
@@ -30,45 +103,15 @@ final class IslandWindowController {
         panel.becomesKeyOnlyIfNeeded = true
         panel.hidesOnDeactivate = false
         panel.isMovable = false
+        panel.isReleasedWhenClosed = false
         panel.ignoresMouseEvents = true
 
-        let host = FirstMouseHostingView(rootView: IslandView(context: context))
+        let host = FirstMouseHostingView(rootView: IslandView(context: context, state: state))
         host.sizingOptions = []
         panel.contentView = host
-
-        NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
-                                               object: nil, queue: .main) { [weak self] _ in
-            self?.reposition()
-        }
     }
 
-    func show() {
-        guard ticker == nil else { return }
-        reposition()
-        bringToFront()
-
-        let ticker = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in self?.tick() }
-        RunLoop.main.add(ticker, forMode: .common)
-        self.ticker = ticker
-
-        clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-            self?.handleOutsideClick()
-        }
-    }
-
-    func hide() {
-        ticker?.invalidate()
-        ticker = nil
-        if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
-        clickMonitor = nil
-        state.expanded = false
-        panel.orderOut(nil)
-    }
-
-    private func reposition() {
-        guard let screen = NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) ?? NSScreen.screens.first else {
-            return
-        }
+    func reposition(on screen: NSScreen) {
         let metrics = IslandMetrics(screen: screen)
         if state.metrics != metrics { state.metrics = metrics }
 
@@ -77,9 +120,14 @@ final class IslandWindowController {
         let height = size.height + 40
         panel.setFrame(NSRect(x: metrics.centerX - width / 2, y: screen.frame.maxY - height,
                               width: width, height: height), display: true)
+        if !panel.isVisible { bringToFront() }
     }
 
-    /// The island's current shape in screen coordinates.
+    func close() {
+        space = nil
+        panel.close()
+    }
+
     private var islandRect: NSRect {
         let size = state.size
         let metrics = state.metrics
@@ -87,7 +135,7 @@ final class IslandWindowController {
                       width: size.width, height: size.height)
     }
 
-    private func tick() {
+    func tick() {
         let mouse = NSEvent.mouseLocation
         let now = Date()
         let inside = islandRect.insetBy(dx: -6, dy: -6).contains(mouse)
@@ -108,7 +156,6 @@ final class IslandWindowController {
             }
         } else {
             hoverStart = nil
-            // While the user is typing in the island, only an outside click closes it.
             if state.expanded, !panel.isKeyWindow, now.timeIntervalSince(lastInside) > 0.4 {
                 collapse()
             }
@@ -117,7 +164,7 @@ final class IslandWindowController {
         if panel.ignoresMouseEvents == inside { panel.ignoresMouseEvents = !inside }
     }
 
-    private func handleOutsideClick() {
+    func handleOutsideClick() {
         guard state.expanded, !islandRect.contains(NSEvent.mouseLocation) else { return }
         collapse()
     }
@@ -125,13 +172,13 @@ final class IslandWindowController {
     private func expand() {
         hoverStart = nil
         state.expanded = true
+        onExpand(self)
     }
 
-    private func collapse() {
+    func collapse() {
         let wasKey = panel.isKeyWindow
         state.expanded = false
         if wasKey {
-            // Hand keyboard focus back to the app the user was in.
             panel.orderOut(nil)
             bringToFront()
         }

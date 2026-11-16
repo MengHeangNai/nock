@@ -26,6 +26,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let islandTimer = IslandTimer()
     private let notes = NotesStore()
     private let stats = SystemStats()
+    private lazy var systemHUD = SystemHUDController(settings: settings)
+    private lazy var notifications = SystemNotificationController(settings: settings, battery: battery, systemHUD: systemHUD)
     private lazy var lyrics = LyricsService(nowPlaying: nowPlaying, settings: settings)
 
     private var dockWindow: DockWindowController?
@@ -41,10 +43,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                         nowPlaying: nowPlaying, battery: battery)
         dockWindow = dock
 
-        let islandState = IslandState(nowPlaying: nowPlaying, timer: islandTimer, battery: battery)
-        let context = IslandContext(state: islandState, settings: settings, nowPlaying: nowPlaying,
+        let context = IslandContext(settings: settings, nowPlaying: nowPlaying,
                                     battery: battery, lyrics: lyrics, timer: islandTimer, shelf: shelf,
-                                    clipboard: clipboard, notes: notes, stats: stats)
+                                    clipboard: clipboard, notes: notes, stats: stats, systemHUD: systemHUD,
+                                    notifications: notifications)
         let island = IslandWindowController(context: context)
         islandWindow = island
 
@@ -68,6 +70,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        systemHUD.stop()
         if SystemDock.isHiddenByGlassDock {
             SystemDock.restore()
         }
@@ -87,7 +90,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func showSettings() {
         if settingsWindow == nil {
-            let host = NSHostingController(rootView: SettingsView(settings: settings, model: model))
+            let host = NSHostingController(rootView: SettingsView(settings: settings, model: model, systemHUD: systemHUD))
             let window = NSWindow(contentViewController: host)
             window.title = "GlassDock Settings"
             window.styleMask = [.titled, .closable]

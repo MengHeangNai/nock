@@ -18,7 +18,13 @@ struct IslandButtonStyle: ButtonStyle {
 struct ClipboardTab: View {
     @ObservedObject var clipboard: ClipboardStore
     @State private var query = ""
-    @State private var copiedID: UUID?
+    @State private var status: RowStatus?
+
+    private struct RowStatus {
+        let id: UUID
+        let message: String
+        let isFailure: Bool
+    }
 
     private var filtered: [ClipboardStore.Item] {
         let matches = query.isEmpty
@@ -66,9 +72,19 @@ struct ClipboardTab: View {
                 .font(.system(size: 12))
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            if copiedID == item.id {
-                Text("Copied").font(.system(size: 11)).foregroundStyle(.green)
+            if let status, status.id == item.id {
+                Text(status.message)
+                    .font(.system(size: 11))
+                    .foregroundStyle(status.isFailure ? Color.red : Color.green)
             }
+            Menu { transformItems(item) } label: {
+                Image(systemName: "wand.and.stars")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
             Button { clipboard.togglePin(item) } label: {
                 Image(systemName: item.pinned ? "pin.fill" : "pin")
                     .font(.system(size: 11))
@@ -82,13 +98,37 @@ struct ClipboardTab: View {
         .contentShape(Rectangle())
         .onTapGesture {
             clipboard.copy(item)
-            copiedID = item.id
+            status = RowStatus(id: item.id, message: "Copied", isFailure: false)
         }
         .contextMenu {
             Button("Copy") { clipboard.copy(item) }
+            Menu("Transform") { transformItems(item) }
             Button(item.pinned ? "Unpin" : "Pin") { clipboard.togglePin(item) }
             Divider()
             Button("Delete") { clipboard.remove(item) }
+        }
+    }
+
+    @ViewBuilder
+    private func transformItems(_ item: ClipboardStore.Item) -> some View {
+        let transforms = ClipboardTransform.applicable(to: item.text)
+        let isInvalidJSON = ClipboardTransform.looksLikeInvalidJSON(item.text)
+        ForEach(transforms) { transform in
+            Button(transform.title) { run(transform, on: item) }
+        }
+        if isInvalidJSON {
+            Text("Not valid JSON")
+        } else if transforms.isEmpty {
+            Text("No transforms available")
+        }
+    }
+
+    private func run(_ transform: ClipboardTransform, on item: ClipboardStore.Item) {
+        switch clipboard.copy(item, transformedBy: transform) {
+        case .success:
+            status = RowStatus(id: item.id, message: "Copied", isFailure: false)
+        case .failure(let failure):
+            status = RowStatus(id: item.id, message: failure.message, isFailure: true)
         }
     }
 }

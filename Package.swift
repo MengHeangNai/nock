@@ -9,6 +9,7 @@ let package = Package(
     ],
     targets: [
         .executableTarget(name: "GlassDock", path: "Sources/GlassDock"),
-        .target(name: "GlassDockMediaRemote", path: "Sources/GlassDockMediaRemote")
+        .target(name: "GlassDockMediaRemote", path: "Sources/GlassDockMediaRemote"),
+        .testTarget(name: "GlassDockTests", dependencies: ["GlassDock"], path: "Tests/GlassDockTests")
     ]
 )
