@@ -197,7 +197,6 @@ struct SettingsView: View {
                         ForEach(KeyboardSoundProfile.allCases) { Text($0.title).tag($0.rawValue) }
                         ForEach(keyboardSounds.packs.filter(\.isAvailable)) { Text($0.name).tag($0.id) }
                     }
-                    .onAppear { keyboardSounds.rescanPacks() }
                     Slider(value: $settings.keyboardSoundVolume, in: 0...1) {
                         Text("Volume")
                     } minimumValueLabel: {
@@ -205,14 +204,32 @@ struct SettingsView: View {
                     } maximumValueLabel: {
                         Image(systemName: "speaker.wave.3.fill").font(.caption)
                     }
-                    Toggle("Vary the pitch of each keystroke", isOn: $settings.keyboardSoundPitchVariation)
-                    Toggle("Play sounds for mouse clicks", isOn: $settings.keyboardSoundMouseClicks)
+                }
+                Picker("Mouse sound", selection: $settings.mouseSoundID) {
+                    Text("Off").tag(MouseSoundProfile.offID)
+                    Text("Match keyboard").tag(MouseSoundProfile.matchKeyboardID)
+                    ForEach(MouseSoundProfile.allCases) { Text($0.title).tag($0.rawValue) }
+                    ForEach(keyboardSounds.mousePacks.filter(\.isAvailable)) { Text($0.name).tag($0.id) }
+                }
+                .onAppear { keyboardSounds.rescanPacks() }
+                if settings.mouseSoundID != MouseSoundProfile.offID {
+                    Slider(value: $settings.mouseSoundVolume, in: 0...1) {
+                        Text("Mouse volume")
+                    } minimumValueLabel: {
+                        Image(systemName: "speaker.fill").font(.caption)
+                    } maximumValueLabel: {
+                        Image(systemName: "speaker.wave.3.fill").font(.caption)
+                    }
+                    Toggle("Play sounds while scrolling", isOn: $settings.mouseScrollSounds)
+                }
+                if settings.keyboardSoundsEnabled || settings.mouseSoundID != MouseSoundProfile.offID {
+                    Toggle("Vary the pitch of each sound", isOn: $settings.keyboardSoundPitchVariation)
                     Toggle("Mute while music is playing", isOn: $settings.keyboardSoundMutesDuringMusic)
                 }
             } header: {
-                Text("Keyboard Sounds")
+                Text("Keyboard & Mouse Sounds")
             } footer: {
-                Text("Built-in sounds are generated on this Mac. Add Mechvibes sound packs and preview every sound in the Island's Keyboard tab. GlassDock only checks which key was pressed to pick its sound, and never reads or records what you type.")
+                Text("Built-in sounds are generated on this Mac. Add Mechvibes keyboard packs or your own mouse packs and preview every sound in the Island's Keyboard tab. GlassDock only checks which key was pressed to pick its sound, and never reads or records what you type.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

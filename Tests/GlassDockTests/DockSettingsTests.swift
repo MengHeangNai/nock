@@ -21,4 +21,26 @@ final class DockSettingsTests: XCTestCase {
         XCTAssertEqual(UserDefaults.standard.double(forKey: "islandShoulderCurve"), 2)
         XCTAssertEqual(UserDefaults.standard.double(forKey: "islandCornerCurve"), 0)
     }
+
+    func testMouseClickSoundsMigrateToMatchKeyboard() throws {
+        let suite = UUID().uuidString
+        let store = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { store.removePersistentDomain(forName: suite) }
+        store.set(true, forKey: "keyboardSoundMouseClicks")
+
+        XCTAssertEqual(DockSettings.mouseSoundID(in: store), MouseSoundProfile.matchKeyboardID)
+        XCTAssertEqual(store.string(forKey: "mouseSound"), MouseSoundProfile.matchKeyboardID)
+        XCTAssertNil(store.object(forKey: "keyboardSoundMouseClicks"))
+    }
+
+    func testMouseSoundsStartOffAndKeepTheSavedChoice() throws {
+        let suite = UUID().uuidString
+        let store = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { store.removePersistentDomain(forName: suite) }
+
+        XCTAssertEqual(DockSettings.mouseSoundID(in: store), MouseSoundProfile.offID)
+        store.set(MouseSoundProfile.crisp.rawValue, forKey: "mouseSound")
+        store.set(true, forKey: "keyboardSoundMouseClicks")
+        XCTAssertEqual(DockSettings.mouseSoundID(in: store), MouseSoundProfile.crisp.rawValue)
+    }
 }

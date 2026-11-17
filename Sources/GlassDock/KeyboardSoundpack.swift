@@ -10,6 +10,7 @@ struct KeyboardSoundpack: Identifiable {
     static let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("GlassDock/Soundpacks", isDirectory: true)
     static let format = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1)!
+    static let configFileName = "config.json"
     static let maxConfigBytes = 1_000_000
     static let maxAudioFileBytes = 50_000_000
     static let maxDefines = 512
@@ -54,11 +55,11 @@ struct KeyboardSoundpack: Identifiable {
 
     private static let wholeFile: [Double] = [0, .infinity]
 
-    private struct Problem: Error {
+    struct Problem: Error {
         let reason: String
     }
 
-    private struct Definition {
+    struct Definition {
         let file: String
         let down: [Double]
         let up: [Double]?
@@ -81,6 +82,7 @@ struct KeyboardSoundpack: Identifiable {
                                                                      options: .skipsHiddenFiles)) ?? []
         return folders
             .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
+            .filter { $0.lastPathComponent.caseInsensitiveCompare(MouseSoundpack.folderName) != .orderedSame }
             .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
             .map(load)
     }
@@ -100,8 +102,8 @@ struct KeyboardSoundpack: Identifiable {
         }
     }
 
-    private static func readConfig(in folder: URL) throws -> [String: Any] {
-        guard let url = file(named: "config.json", in: folder, maxBytes: maxConfigBytes),
+    static func readConfig(in folder: URL) throws -> [String: Any] {
+        guard let url = file(named: configFileName, in: folder, maxBytes: maxConfigBytes),
               let data = try? Data(contentsOf: url),
               let config = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw Problem(reason: "Missing or unreadable config.json.")
@@ -146,27 +148,30 @@ struct KeyboardSoundpack: Identifiable {
     }
 
     private static func v2Definitions(_ entries: [String: Any], config: [String: Any]) -> [Int: Definition] {
-        let isMulti = config["definition_method"] as? String == "multi"
-        let packFile = config["audio_file"] as? String ?? ""
-        return keyNames.reduce(into: [:]) { definitions, key in
-            guard let entry = entries[key.value.code] as? [String: Any] else { return }
-            let keyFile = isMulti ? entry["audio_file"] as? String ?? "" : ""
-            let file = keyFile.isEmpty ? packFile : keyFile
-            if isMulti, entry["timing"] == nil {
-                definitions[key.key] = Definition(file: file, down: wholeFile, up: nil)
-            } else if let timing = (entry["timing"] as? [[NSNumber]])?.map({ $0.map(\.doubleValue) }),
-                      (1...2).contains(timing.count) {
-                definitions[key.key] = Definition(file: file, down: timing[0], up: timing.count == 2 ? timing[1] : nil)
-            }
+        keyNames.reduce(into: [:]) { definitions, key in
+            definitions[key.key] = v2Definition(entries[key.value.code], config: config)
         }
     }
 
-    private static func keySounds(for definitions: [Int: Definition], folder: URL) throws -> [Int: KeySound] {
+    static func v2Definition(_ entry: Any?, config: [String: Any]) -> Definition? {
+        guard let entry = entry as? [String: Any] else { return nil }
+        let isMulti = config["definition_method"] as? String == "multi"
+        let entryFile = isMulti ? entry["audio_file"] as? String ?? "" : ""
+        let file = entryFile.isEmpty ? config["audio_file"] as? String ?? "" : entryFile
+        if isMulti, entry["timing"] == nil {
+            return Definition(file: file, down: wholeFile, up: nil)
+        }
+        guard let timing = (entry["timing"] as? [[NSNumber]])?.map({ $0.map(\.doubleValue) }),
+              (1...2).contains(timing.count) else { return nil }
+        return Definition(file: file, down: timing[0], up: timing.count == 2 ? timing[1] : nil)
+    }
+
+    static func keySounds<Key: Hashable>(for definitions: [Key: Definition], folder: URL) throws -> [Key: KeySound] {
         var files: [String: AVAudioFile] = [:]
         var slices: [String: AVAudioPCMBuffer] = [:]
-        var sounds: [Int: KeySound] = [:]
-        var problem = Problem(reason: "No usable key sounds.")
-        for (keyCode, definition) in definitions {
+        var sounds: [Key: KeySound] = [:]
+        var problem = Problem(reason: "No usable sounds.")
+        for (key, definition) in definitions {
             if files[definition.file] == nil {
                 do {
                     files[definition.file] = try open(definition.file, in: folder)
@@ -175,7 +180,7 @@ struct KeyboardSoundpack: Identifiable {
                 }
             }
             guard let audio = files[definition.file], let down = slice(definition.down, of: audio, cache: &slices) else { continue }
-            sounds[keyCode] = KeySound(down: down, up: definition.up.flatMap { slice($0, of: audio, cache: &slices) })
+            sounds[key] = KeySound(down: down, up: definition.up.flatMap { slice($0, of: audio, cache: &slices) })
         }
         guard !sounds.isEmpty else { throw problem }
         return sounds
@@ -206,7 +211,7 @@ struct KeyboardSoundpack: Identifiable {
         return url
     }
 
-    private static func open(_ name: String, in folder: URL) throws -> AVAudioFile {
+    static func open(_ name: String, in folder: URL) throws -> AVAudioFile {
         guard let url = file(named: name, in: folder, maxBytes: maxAudioFileBytes) else {
             throw Problem(reason: "Sound file is missing or outside the pack.")
         }
@@ -217,7 +222,7 @@ struct KeyboardSoundpack: Identifiable {
         }
     }
 
-    private static func read(_ audio: AVAudioFile, from start: AVAudioFramePosition, frames: AVAudioFramePosition) -> AVAudioPCMBuffer? {
+    static func read(_ audio: AVAudioFile, from start: AVAudioFramePosition, frames: AVAudioFramePosition) -> AVAudioPCMBuffer? {
         let capped = AVAudioFrameCount(min(frames, AVAudioFramePosition(maxKeySoundSeconds * audio.processingFormat.sampleRate)))
         guard let source = AVAudioPCMBuffer(pcmFormat: audio.processingFormat, frameCapacity: capped) else { return nil }
         do {

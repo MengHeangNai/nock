@@ -55,8 +55,10 @@ final class DockSettings: ObservableObject {
     @Published var keyboardSoundID: String { didSet { store.set(keyboardSoundID, forKey: Keys.keyboardSoundID) } }
     @Published var keyboardSoundVolume: Double { didSet { store.set(keyboardSoundVolume, forKey: Keys.keyboardSoundVolume) } }
     @Published var keyboardSoundPitchVariation: Bool { didSet { store.set(keyboardSoundPitchVariation, forKey: Keys.keyboardSoundPitchVariation) } }
-    @Published var keyboardSoundMouseClicks: Bool { didSet { store.set(keyboardSoundMouseClicks, forKey: Keys.keyboardSoundMouseClicks) } }
     @Published var keyboardSoundMutesDuringMusic: Bool { didSet { store.set(keyboardSoundMutesDuringMusic, forKey: Keys.keyboardSoundMutesDuringMusic) } }
+    @Published var mouseSoundID: String { didSet { store.set(mouseSoundID, forKey: Keys.mouseSoundID) } }
+    @Published var mouseSoundVolume: Double { didSet { store.set(mouseSoundVolume, forKey: Keys.mouseSoundVolume) } }
+    @Published var mouseScrollSounds: Bool { didSet { store.set(mouseScrollSounds, forKey: Keys.mouseScrollSounds) } }
 
     let firstLaunchDate: Date
 
@@ -89,6 +91,9 @@ final class DockSettings: ObservableObject {
         static let keyboardSoundPitchVariation = "keyboardSoundPitchVariation"
         static let keyboardSoundMouseClicks = "keyboardSoundMouseClicks"
         static let keyboardSoundMutesDuringMusic = "keyboardSoundMutesDuringMusic"
+        static let mouseSoundID = "mouseSound"
+        static let mouseSoundVolume = "mouseSoundVolume"
+        static let mouseScrollSounds = "mouseScrollSounds"
         static let firstLaunchDate = "firstLaunchDate"
         static let iconSize = "iconSize"
         static let magnification = "magnification"
@@ -131,8 +136,9 @@ final class DockSettings: ObservableObject {
             Keys.keyboardSoundsEnabled: false,
             Keys.keyboardSoundVolume: 0.6,
             Keys.keyboardSoundPitchVariation: true,
-            Keys.keyboardSoundMouseClicks: false,
             Keys.keyboardSoundMutesDuringMusic: true,
+            Keys.mouseSoundVolume: 0.6,
+            Keys.mouseScrollSounds: false,
         ])
         showLyrics = store.bool(forKey: Keys.showLyrics)
         pipKeepLive = store.bool(forKey: Keys.pipKeepLive)
@@ -160,8 +166,10 @@ final class DockSettings: ObservableObject {
         keyboardSoundID = store.string(forKey: Keys.keyboardSoundID) ?? KeyboardSoundProfile.tactile.rawValue
         keyboardSoundVolume = store.double(forKey: Keys.keyboardSoundVolume)
         keyboardSoundPitchVariation = store.bool(forKey: Keys.keyboardSoundPitchVariation)
-        keyboardSoundMouseClicks = store.bool(forKey: Keys.keyboardSoundMouseClicks)
         keyboardSoundMutesDuringMusic = store.bool(forKey: Keys.keyboardSoundMutesDuringMusic)
+        mouseSoundID = Self.mouseSoundID(in: store)
+        mouseSoundVolume = store.double(forKey: Keys.mouseSoundVolume)
+        mouseScrollSounds = store.bool(forKey: Keys.mouseScrollSounds)
         if let saved = store.object(forKey: Keys.firstLaunchDate) as? Date {
             firstLaunchDate = saved
         } else {
@@ -186,6 +194,14 @@ final class DockSettings: ObservableObject {
 
     static func islandCurve(_ value: Double?) -> Double {
         min(max(value ?? defaultIslandCurve, islandCurveRange.lowerBound), islandCurveRange.upperBound)
+    }
+
+    static func mouseSoundID(in store: UserDefaults) -> String {
+        if let saved = store.string(forKey: Keys.mouseSoundID) { return saved }
+        let migrated = store.bool(forKey: Keys.keyboardSoundMouseClicks) ? MouseSoundProfile.matchKeyboardID : MouseSoundProfile.offID
+        store.set(migrated, forKey: Keys.mouseSoundID)
+        store.removeObject(forKey: Keys.keyboardSoundMouseClicks)
+        return migrated
     }
 
     static func defaultPinnedPaths() -> [String] {

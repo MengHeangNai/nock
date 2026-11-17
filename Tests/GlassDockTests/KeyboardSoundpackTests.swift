@@ -119,6 +119,17 @@ final class KeyboardSoundpackTests: XCTestCase {
         XCTAssertEqual(unknown.unavailableReason, KeyboardSoundpack.unrecognisedFormat)
     }
 
+    func testScanSkipsTheMousePackFolder() throws {
+        let mousePack = root.appendingPathComponent("Mouse/Logi", isDirectory: true)
+        try FileManager.default.createDirectory(at: mousePack, withIntermediateDirectories: true)
+        try writeTone(to: mousePack.appendingPathComponent("click.wav"), seconds: 0.1)
+        try makePack("keys", files: ["sound.wav": 0.2], config: [
+            "key_define_type": "single", "sound": "sound.wav", "defines": ["30": [0, 100]],
+        ])
+
+        XCTAssertEqual(KeyboardSoundpack.scan(root).map(\.id), ["pack:keys"])
+    }
+
     func testMacKeyCodesMapToMechvibesKeyNames() {
         XCTAssertEqual(KeyboardSoundpack.keyNames[kVK_ANSI_A]?.scancode, 30)
         XCTAssertEqual(KeyboardSoundpack.keyNames[kVK_ANSI_A]?.code, "KeyA")
@@ -155,8 +166,10 @@ final class KeyboardSoundpackTests: XCTestCase {
         try JSONSerialization.data(withJSONObject: config).write(to: folder.appendingPathComponent("config.json"))
         return KeyboardSoundpack.load(from: folder)
     }
+}
 
-    private func writeTone(to url: URL, seconds: Double) throws {
+extension XCTestCase {
+    func writeTone(to url: URL, seconds: Double) throws {
         let rate = 44_100.0
         let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: rate, channels: 2))
         let frames = AVAudioFrameCount(rate * seconds)
