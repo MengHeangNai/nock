@@ -106,6 +106,17 @@ struct MediaKeyPress: Equatable {
     }
 }
 
+struct HeldMediaKeys {
+    private var claimed = Set<MediaKey>()
+
+    mutating func claim(_ press: MediaKeyPress, canHandle: Bool) -> Bool {
+        guard press.isDown else { return claimed.remove(press.key) != nil }
+        guard !press.isRepeat else { return claimed.contains(press.key) }
+        if canHandle { claimed.insert(press.key) } else { claimed.remove(press.key) }
+        return canHandle
+    }
+}
+
 enum HUDStep {
     static let standard = 16
     static let fine = 64

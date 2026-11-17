@@ -12,6 +12,7 @@ final class SystemHUDController: ObservableObject {
     private let keyboard = KeyboardBacklight()
     private let worker = DispatchQueue(label: "GlassDock.SystemHUD", qos: .userInteractive)
     private lazy var tap = MediaKeyTap { [weak self] press in self?.handle(press) ?? false }
+    private var heldKeys = HeldMediaKeys()
     private var brightnessDisplays = Set<CGDirectDisplayID>()
     private var lastBacklight: Float = 0 // only used on `worker`
     private var accessTimer: Timer?
@@ -90,8 +91,9 @@ final class SystemHUDController: ObservableObject {
 
     /// Runs on the main thread inside the event tap, so it only decides and hands the work to `worker`.
     private func handle(_ press: MediaKeyPress) -> Bool {
-        guard !press.isLeftToSystem, let work = work(for: press) else { return false }
-        if press.isDown {
+        let work = press.isLeftToSystem ? nil : work(for: press)
+        guard heldKeys.claim(press, canHandle: work != nil) else { return false }
+        if press.isDown, let work {
             let steps = press.isFineStep ? HUDStep.fine : HUDStep.standard
             worker.async { [weak self] in
                 guard let reading = work(steps) else {

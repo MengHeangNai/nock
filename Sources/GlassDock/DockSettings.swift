@@ -32,11 +32,31 @@ final class DockSettings: ObservableObject {
     @Published var islandWithoutNotch: IslandWithoutNotchMode { didSet { store.set(islandWithoutNotch.rawValue, forKey: Keys.islandWithoutNotch) } }
     @Published var hideIslandInFullScreen: Bool { didSet { store.set(hideIslandInFullScreen, forKey: Keys.hideIslandInFullScreen) } }
     @Published var islandFinish: IslandFinish { didSet { store.set(islandFinish.rawValue, forKey: Keys.islandFinish) } }
+    @Published var islandShoulderCurve: Double {
+        didSet {
+            let clamped = Self.islandCurve(islandShoulderCurve)
+            if clamped != islandShoulderCurve { islandShoulderCurve = clamped }
+            store.set(islandShoulderCurve, forKey: Keys.islandShoulderCurve)
+        }
+    }
+    @Published var islandCornerCurve: Double {
+        didSet {
+            let clamped = Self.islandCurve(islandCornerCurve)
+            if clamped != islandCornerCurve { islandCornerCurve = clamped }
+            store.set(islandCornerCurve, forKey: Keys.islandCornerCurve)
+        }
+    }
     @Published var showNotchPet: Bool { didSet { store.set(showNotchPet, forKey: Keys.showNotchPet) } }
     @Published var showVisualizer: Bool { didSet { store.set(showVisualizer, forKey: Keys.showVisualizer) } }
     @Published var visualizerStyle: VisualizerStyle { didSet { store.set(visualizerStyle.rawValue, forKey: Keys.visualizerStyle) } }
     @Published var lyricsMode: LyricsViewMode { didSet { store.set(lyricsMode.rawValue, forKey: Keys.lyricsMode) } }
     @Published var pipKeepLive: Bool { didSet { store.set(pipKeepLive, forKey: Keys.pipKeepLive) } }
+    @Published var keyboardSoundsEnabled: Bool { didSet { store.set(keyboardSoundsEnabled, forKey: Keys.keyboardSoundsEnabled) } }
+    @Published var keyboardSoundID: String { didSet { store.set(keyboardSoundID, forKey: Keys.keyboardSoundID) } }
+    @Published var keyboardSoundVolume: Double { didSet { store.set(keyboardSoundVolume, forKey: Keys.keyboardSoundVolume) } }
+    @Published var keyboardSoundPitchVariation: Bool { didSet { store.set(keyboardSoundPitchVariation, forKey: Keys.keyboardSoundPitchVariation) } }
+    @Published var keyboardSoundMouseClicks: Bool { didSet { store.set(keyboardSoundMouseClicks, forKey: Keys.keyboardSoundMouseClicks) } }
+    @Published var keyboardSoundMutesDuringMusic: Bool { didSet { store.set(keyboardSoundMutesDuringMusic, forKey: Keys.keyboardSoundMutesDuringMusic) } }
 
     let firstLaunchDate: Date
 
@@ -56,11 +76,19 @@ final class DockSettings: ObservableObject {
         static let islandWithoutNotch = "islandWithoutNotch"
         static let hideIslandInFullScreen = "hideIslandInFullScreen"
         static let islandFinish = "islandFinish"
+        static let islandShoulderCurve = "islandShoulderCurve"
+        static let islandCornerCurve = "islandCornerCurve"
         static let showNotchPet = "showNotchPet"
         static let showVisualizer = "showVisualizer"
         static let visualizerStyle = "visualizerStyle"
         static let lyricsMode = "lyricsMode"
         static let pipKeepLive = "pipKeepLive"
+        static let keyboardSoundsEnabled = "keyboardSoundsEnabled"
+        static let keyboardSoundID = "keyboardSoundProfile"
+        static let keyboardSoundVolume = "keyboardSoundVolume"
+        static let keyboardSoundPitchVariation = "keyboardSoundPitchVariation"
+        static let keyboardSoundMouseClicks = "keyboardSoundMouseClicks"
+        static let keyboardSoundMutesDuringMusic = "keyboardSoundMutesDuringMusic"
         static let firstLaunchDate = "firstLaunchDate"
         static let iconSize = "iconSize"
         static let magnification = "magnification"
@@ -100,6 +128,11 @@ final class DockSettings: ObservableObject {
             Keys.notifyBluetooth: true,
             Keys.notifyWiFi: true,
             Keys.notifyBattery: true,
+            Keys.keyboardSoundsEnabled: false,
+            Keys.keyboardSoundVolume: 0.6,
+            Keys.keyboardSoundPitchVariation: true,
+            Keys.keyboardSoundMouseClicks: false,
+            Keys.keyboardSoundMutesDuringMusic: true,
         ])
         showLyrics = store.bool(forKey: Keys.showLyrics)
         pipKeepLive = store.bool(forKey: Keys.pipKeepLive)
@@ -117,10 +150,18 @@ final class DockSettings: ObservableObject {
         islandWithoutNotch = store.string(forKey: Keys.islandWithoutNotch).flatMap(IslandWithoutNotchMode.init) ?? .alwaysShown
         hideIslandInFullScreen = store.bool(forKey: Keys.hideIslandInFullScreen)
         islandFinish = store.string(forKey: Keys.islandFinish).flatMap(IslandFinish.init) ?? .black
+        islandShoulderCurve = Self.islandCurve(store.object(forKey: Keys.islandShoulderCurve) as? Double)
+        islandCornerCurve = Self.islandCurve(store.object(forKey: Keys.islandCornerCurve) as? Double)
         showNotchPet = store.bool(forKey: Keys.showNotchPet)
         showVisualizer = store.bool(forKey: Keys.showVisualizer)
         visualizerStyle = store.string(forKey: Keys.visualizerStyle).flatMap(VisualizerStyle.init) ?? .bars
         lyricsMode = store.string(forKey: Keys.lyricsMode).flatMap(LyricsViewMode.init) ?? .karaoke
+        keyboardSoundsEnabled = store.bool(forKey: Keys.keyboardSoundsEnabled)
+        keyboardSoundID = store.string(forKey: Keys.keyboardSoundID) ?? KeyboardSoundProfile.tactile.rawValue
+        keyboardSoundVolume = store.double(forKey: Keys.keyboardSoundVolume)
+        keyboardSoundPitchVariation = store.bool(forKey: Keys.keyboardSoundPitchVariation)
+        keyboardSoundMouseClicks = store.bool(forKey: Keys.keyboardSoundMouseClicks)
+        keyboardSoundMutesDuringMusic = store.bool(forKey: Keys.keyboardSoundMutesDuringMusic)
         if let saved = store.object(forKey: Keys.firstLaunchDate) as? Date {
             firstLaunchDate = saved
         } else {
@@ -138,6 +179,13 @@ final class DockSettings: ObservableObject {
         showClock = store.bool(forKey: Keys.showClock)
         hideSystemDock = store.bool(forKey: Keys.hideSystemDock)
         pinnedPaths = store.stringArray(forKey: Keys.pinnedPaths) ?? DockSettings.defaultPinnedPaths()
+    }
+
+    static let islandCurveRange = 0.0...2.0
+    static let defaultIslandCurve = 1.0
+
+    static func islandCurve(_ value: Double?) -> Double {
+        min(max(value ?? defaultIslandCurve, islandCurveRange.lowerBound), islandCurveRange.upperBound)
     }
 
     static func defaultPinnedPaths() -> [String] {

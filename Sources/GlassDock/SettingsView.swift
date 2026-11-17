@@ -7,6 +7,7 @@ struct SettingsView: View {
     @ObservedObject var settings: DockSettings
     @ObservedObject var model: DockModel
     @ObservedObject var systemHUD: SystemHUDController
+    @ObservedObject var keyboardSounds: KeyboardSoundController
     @State private var openAtLogin = SMAppService.mainApp.status == .enabled
     @State private var windowAccess = AppWindows.isTrusted
     @State private var recentsAccess = RecentDocuments.isAccessible
@@ -24,6 +25,28 @@ struct SettingsView: View {
                 }
                 Picker("Island finish", selection: $settings.islandFinish) {
                     ForEach(IslandFinish.allCases) { Text($0.title).tag($0) }
+                }
+                Slider(value: $settings.islandShoulderCurve, in: DockSettings.islandCurveRange) {
+                    Text("Top curve")
+                } minimumValueLabel: {
+                    Text("Flat").font(.caption)
+                } maximumValueLabel: {
+                    Text("Deep").font(.caption)
+                }
+                Slider(value: $settings.islandCornerCurve, in: DockSettings.islandCurveRange) {
+                    Text("Corner roundness")
+                } minimumValueLabel: {
+                    Text("Square").font(.caption)
+                } maximumValueLabel: {
+                    Text("Round").font(.caption)
+                }
+                HStack {
+                    Spacer()
+                    Button("Reset") {
+                        settings.islandShoulderCurve = DockSettings.defaultIslandCurve
+                        settings.islandCornerCurve = DockSettings.defaultIslandCurve
+                    }
+                    .controlSize(.small)
                 }
                 Toggle("Hide in full-screen apps", isOn: $settings.hideIslandInFullScreen)
                 Toggle("Show notch pet", isOn: $settings.showNotchPet)
@@ -156,6 +179,42 @@ struct SettingsView: View {
                         settings.pinnedPaths = DockSettings.defaultPinnedPaths()
                     }
                 }
+            }
+
+            Section {
+                Toggle("Play keyboard sounds", isOn: $settings.keyboardSoundsEnabled)
+                if settings.keyboardSoundsEnabled {
+                    if !windowAccess {
+                        HStack {
+                            Text("Needs Accessibility access in Privacy & Security to hear keys typed in other apps.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Button("Allow…") { AppWindows.requestAccess() }
+                        }
+                    }
+                    Picker("Sound", selection: $settings.keyboardSoundID) {
+                        ForEach(KeyboardSoundProfile.allCases) { Text($0.title).tag($0.rawValue) }
+                        ForEach(keyboardSounds.packs.filter(\.isAvailable)) { Text($0.name).tag($0.id) }
+                    }
+                    .onAppear { keyboardSounds.rescanPacks() }
+                    Slider(value: $settings.keyboardSoundVolume, in: 0...1) {
+                        Text("Volume")
+                    } minimumValueLabel: {
+                        Image(systemName: "speaker.fill").font(.caption)
+                    } maximumValueLabel: {
+                        Image(systemName: "speaker.wave.3.fill").font(.caption)
+                    }
+                    Toggle("Vary the pitch of each keystroke", isOn: $settings.keyboardSoundPitchVariation)
+                    Toggle("Play sounds for mouse clicks", isOn: $settings.keyboardSoundMouseClicks)
+                    Toggle("Mute while music is playing", isOn: $settings.keyboardSoundMutesDuringMusic)
+                }
+            } header: {
+                Text("Keyboard Sounds")
+            } footer: {
+                Text("Built-in sounds are generated on this Mac. Add Mechvibes sound packs and preview every sound in the Island's Keyboard tab. GlassDock only checks which key was pressed to pick its sound, and never reads or records what you type.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("System") {

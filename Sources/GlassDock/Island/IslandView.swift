@@ -13,6 +13,7 @@ final class IslandContext {
     let stats: SystemStats
     let systemHUD: SystemHUDController
     let notifications: SystemNotificationController
+    let keyboardSounds: KeyboardSoundController
     let audioLevels = AudioLevelMonitor()
     let calendar = CalendarService()
     let keepAwake = KeepAwake()
@@ -28,7 +29,7 @@ final class IslandContext {
     init(settings: DockSettings, nowPlaying: NowPlayingMonitor, battery: BatteryMonitor,
          lyrics: LyricsService, timer: IslandTimer, shelf: ShelfStore, clipboard: ClipboardStore,
          notes: NotesStore, stats: SystemStats, systemHUD: SystemHUDController,
-         notifications: SystemNotificationController) {
+         notifications: SystemNotificationController, keyboardSounds: KeyboardSoundController) {
         self.settings = settings
         self.nowPlaying = nowPlaying
         self.battery = battery
@@ -40,6 +41,7 @@ final class IslandContext {
         self.stats = stats
         self.systemHUD = systemHUD
         self.notifications = notifications
+        self.keyboardSounds = keyboardSounds
         pet = NotchPetMonitor(settings: settings, nowPlaying: nowPlaying, battery: battery, shelf: shelf)
         pip = PiPController(settings: settings)
     }
@@ -56,6 +58,8 @@ struct IslandView: View {
     @ObservedObject private var pet: NotchPetMonitor
     @ObservedObject private var battery: BatteryMonitor
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private static let maxShoulderRadius: CGFloat = 36
 
     init(context: IslandContext, state: IslandState) {
         self.context = context
@@ -81,9 +85,10 @@ struct IslandView: View {
         let metrics = state.metrics
         let size = state.size
         let isOpen = state.expanded || state.hud != nil || state.notification != nil
-        let shoulderRadius: CGFloat = isOpen ? 14 : 6
+        let shoulderRadius = min((isOpen ? 22 : 10) * settings.islandShoulderCurve, Self.maxShoulderRadius)
         let shape = IslandShape(topRadius: shoulderRadius,
-                                bottomRadius: isOpen ? 32 : metrics.notchHeight * 0.38)
+                                bottomRadius: isOpen ? min(44 * settings.islandCornerCurve, size.height * 0.45)
+                                                     : metrics.notchHeight * 0.5 * settings.islandCornerCurve)
         let animation: Animation = reduceMotion ? .easeInOut(duration: 0.2) : .spring(duration: 0.35, bounce: 0.12)
         let finish = battery.lowPowerMode ? .black : settings.islandFinish
 
@@ -130,6 +135,8 @@ struct IslandView: View {
         .animation(animation, value: state.hud != nil)
         .animation(animation, value: state.notification != nil)
         .animation(animation, value: finish)
+        .animation(animation, value: settings.islandShoulderCurve)
+        .animation(animation, value: settings.islandCornerCurve)
     }
 
     private func islandBackground(_ finish: IslandFinish, shape: IslandShape, notchHeight: CGFloat) -> some View {
@@ -268,7 +275,7 @@ struct IslandView: View {
             tabContent(current)
                 .padding(.horizontal, 22)
                 .padding(.top, 12)
-                .padding(.bottom, 18)
+                .padding(.bottom, 18 * max(settings.islandCornerCurve, DockSettings.defaultIslandCurve))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
@@ -310,6 +317,7 @@ struct IslandView: View {
         case .devices: DevicesTab(devices: c.devices, battery: c.battery)
         case .stats: StatsTab(stats: c.stats)
         case .windows: WindowsTab(controller: c.pinnedWindows, pip: c.pip)
+        case .keyboard: KeyboardTab(sounds: c.keyboardSounds, settings: c.settings)
         }
     }
 }

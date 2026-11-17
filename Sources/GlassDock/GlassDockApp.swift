@@ -29,6 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var systemHUD = SystemHUDController(settings: settings)
     private lazy var notifications = SystemNotificationController(settings: settings, battery: battery, systemHUD: systemHUD)
     private lazy var lyrics = LyricsService(nowPlaying: nowPlaying, settings: settings)
+    private lazy var keyboardSounds = KeyboardSoundController(settings: settings, nowPlaying: nowPlaying)
 
     private var dockWindow: DockWindowController?
     private var islandWindow: IslandWindowController?
@@ -46,7 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let context = IslandContext(settings: settings, nowPlaying: nowPlaying,
                                     battery: battery, lyrics: lyrics, timer: islandTimer, shelf: shelf,
                                     clipboard: clipboard, notes: notes, stats: stats, systemHUD: systemHUD,
-                                    notifications: notifications)
+                                    notifications: notifications, keyboardSounds: keyboardSounds)
         let island = IslandWindowController(context: context)
         islandWindow = island
 
@@ -91,7 +92,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func showSettings() {
         if settingsWindow == nil {
-            let host = NSHostingController(rootView: SettingsView(settings: settings, model: model, systemHUD: systemHUD))
+            let host = NSHostingController(rootView: SettingsView(settings: settings, model: model, systemHUD: systemHUD,
+                                                                  keyboardSounds: keyboardSounds))
             let window = NSWindow(contentViewController: host)
             window.title = "GlassDock Settings"
             window.styleMask = [.titled, .closable]

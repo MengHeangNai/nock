@@ -198,6 +198,26 @@ final class MediaKeyPressTests: XCTestCase {
         XCTAssertEqual(MediaKey.illuminationToggle.action, .toggleBacklight)
     }
 
+    func testAReleaseIsConsumedOnlyAfterItsPressWas() {
+        let down = MediaKeyPress(subtype: 8, data1: data1(key: 0, state: 0xA), modifiers: [])!
+        let up = MediaKeyPress(subtype: 8, data1: data1(key: 0, state: 0xB), modifiers: [])!
+        var held = HeldMediaKeys()
+        XCTAssertFalse(held.claim(up, canHandle: true))
+        XCTAssertTrue(held.claim(down, canHandle: true))
+        XCTAssertTrue(held.claim(up, canHandle: true))
+        XCTAssertFalse(held.claim(up, canHandle: true))
+    }
+
+    func testARepeatOrReleaseOfAPressLeftToMacOSIsLeftToMacOS() {
+        let down = MediaKeyPress(subtype: 8, data1: data1(key: 1, state: 0xA), modifiers: [.command])!
+        let repeated = MediaKeyPress(subtype: 8, data1: data1(key: 1, state: 0xA, isRepeat: true), modifiers: [])!
+        let up = MediaKeyPress(subtype: 8, data1: data1(key: 1, state: 0xB), modifiers: [])!
+        var held = HeldMediaKeys()
+        XCTAssertFalse(held.claim(down, canHandle: false))
+        XCTAssertFalse(held.claim(repeated, canHandle: true))
+        XCTAssertFalse(held.claim(up, canHandle: true))
+    }
+
     func testKeysBelongToTheirKind() {
         XCTAssertEqual(MediaKey.mute.kind, .volume)
         XCTAssertEqual(MediaKey.brightnessDown.kind, .brightness)

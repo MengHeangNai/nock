@@ -3,7 +3,7 @@ import Combine
 
 enum IslandTab: String, CaseIterable, Identifiable {
     case home, nowPlaying, lyrics, timer, battery, upNext, shelf, clipboard, notes
-    case terminal, aiUsage, colorPicker, keepAwake, downloads, devices, stats, windows
+    case terminal, aiUsage, colorPicker, keepAwake, downloads, devices, stats, windows, keyboard
 
     var id: String { rawValue }
 
@@ -33,6 +33,7 @@ enum IslandTab: String, CaseIterable, Identifiable {
         case .devices: return "headphones"
         case .stats: return "chart.xyaxis.line"
         case .windows: return "pin.fill"
+        case .keyboard: return "keyboard"
         }
     }
 
@@ -55,6 +56,7 @@ enum IslandTab: String, CaseIterable, Identifiable {
         case .devices: return "Devices"
         case .stats: return "Stats"
         case .windows: return "Windows"
+        case .keyboard: return "Keyboard"
         }
     }
 }
