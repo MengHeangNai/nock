@@ -54,6 +54,7 @@ struct IslandView: View {
     @ObservedObject private var systemHUD: SystemHUDController
     @ObservedObject private var notifications: SystemNotificationController
     @ObservedObject private var pet: NotchPetMonitor
+    @ObservedObject private var battery: BatteryMonitor
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(context: IslandContext, state: IslandState) {
@@ -65,6 +66,11 @@ struct IslandView: View {
         _systemHUD = ObservedObject(wrappedValue: context.systemHUD)
         _notifications = ObservedObject(wrappedValue: context.notifications)
         _pet = ObservedObject(wrappedValue: context.pet)
+        _battery = ObservedObject(wrappedValue: context.battery)
+    }
+
+    private var contentTransition: AnyTransition {
+        reduceMotion ? .opacity : AnyTransition(.blurReplace)
     }
 
     private var visibleTabs: [IslandTab] {
@@ -74,31 +80,35 @@ struct IslandView: View {
     var body: some View {
         let metrics = state.metrics
         let size = state.size
-        let radius = state.expanded || state.hud != nil || state.notification != nil ? 28 : metrics.notchHeight * 0.32
-        let shape = UnevenRoundedRectangle(bottomLeadingRadius: radius, bottomTrailingRadius: radius,
-                                           style: .continuous)
+        let isOpen = state.expanded || state.hud != nil || state.notification != nil
+        let shoulderRadius: CGFloat = isOpen ? 14 : 6
+        let shape = IslandShape(topRadius: shoulderRadius,
+                                bottomRadius: isOpen ? 32 : metrics.notchHeight * 0.38)
+        let animation: Animation = reduceMotion ? .easeInOut(duration: 0.2) : .spring(duration: 0.35, bounce: 0.12)
+        let finish = battery.lowPowerMode ? .black : settings.islandFinish
 
         ZStack(alignment: .top) {
             if state.expanded {
                 expandedContent(metrics)
                     .overlay(alignment: .top) { expandedOverlay(metrics) }
-                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
+                    .transition(contentTransition)
             } else if let reading = state.hud {
                 hudContent(reading, metrics: metrics)
-                    .transition(.opacity)
+                    .transition(contentTransition)
             } else if let notification = state.notification {
                 notificationContent(notification, metrics: metrics)
-                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.9, anchor: .top)))
+                    .transition(contentTransition)
             } else if let live = state.live, !state.isIdlePillHidden {
                 collapsedContent(live, metrics: metrics)
-                    .transition(.opacity)
+                    .transition(contentTransition)
             } else if state.showsPet {
                 petContent(metrics)
-                    .transition(.opacity)
+                    .transition(contentTransition)
             }
         }
         .frame(width: size.width, height: size.height, alignment: .top)
-        .background(Color.black)
+        .padding(.horizontal, shoulderRadius)
+        .background { islandBackground(finish, shape: shape, notchHeight: metrics.notchHeight) }
         .clipShape(shape)
         .contentShape(shape)
         .shadow(color: .black.opacity(state.expanded ? 0.45 : 0), radius: 16, y: 6)
@@ -114,12 +124,33 @@ struct IslandView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .foregroundStyle(.white)
         .environment(\.colorScheme, .dark)
-        .animation(.spring(response: 0.38, dampingFraction: 0.8), value: state.expanded)
-        .animation(.spring(response: 0.38, dampingFraction: 0.8), value: state.live)
-        .animation(.spring(response: 0.38, dampingFraction: 0.8), value: state.showsPet)
-        .animation(.spring(response: 0.38, dampingFraction: 0.8), value: state.hud != nil)
-        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.42, dampingFraction: 0.72),
-                   value: state.notification != nil)
+        .animation(animation, value: state.expanded)
+        .animation(animation, value: state.live)
+        .animation(animation, value: state.showsPet)
+        .animation(animation, value: state.hud != nil)
+        .animation(animation, value: state.notification != nil)
+        .animation(animation, value: finish)
+    }
+
+    private func islandBackground(_ finish: IslandFinish, shape: IslandShape, notchHeight: CGFloat) -> some View {
+        ZStack {
+            if finish != .black {
+                if #available(macOS 26.0, *) {
+                    Color.clear.glassEffect(.regular, in: shape)
+                } else {
+                    shape.fill(.ultraThinMaterial)
+                }
+            }
+            Color.black.opacity(finish == .black ? 1 : 0.35)
+                .overlay(alignment: .top) {
+                    LinearGradient(stops: [.init(color: .black, location: 0),
+                                           .init(color: .black, location: 0.55),
+                                           .init(color: .clear, location: 1)],
+                                   startPoint: .top, endPoint: .bottom)
+                        .frame(height: notchHeight * 1.8)
+                        .opacity(finish == .dynamicGlass ? 1 : 0)
+                }
+        }
     }
 
     private func hudContent(_ reading: HUDReading, metrics: IslandMetrics) -> some View {
@@ -210,7 +241,7 @@ struct IslandView: View {
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
             .shadow(color: .black.opacity(0.4), radius: 14, y: 6)
             .padding(.top, metrics.notchHeight + 10)
-            .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.94, anchor: .top)))
+            .transition(contentTransition)
     }
 
     private func expandedContent(_ metrics: IslandMetrics) -> some View {
@@ -280,6 +311,43 @@ struct IslandView: View {
         case .stats: StatsTab(stats: c.stats)
         case .windows: WindowsTab(controller: c.pinnedWindows, pip: c.pip)
         }
+    }
+}
+
+private struct IslandShape: Shape {
+    var topRadius: CGFloat
+    var bottomRadius: CGFloat
+
+    var animatableData: AnimatablePair<CGFloat, CGFloat> {
+        get { AnimatablePair(topRadius, bottomRadius) }
+        set {
+            topRadius = newValue.first
+            bottomRadius = newValue.second
+        }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let top = min(topRadius, rect.width / 4, rect.height / 2)
+        let left = rect.minX + top
+        let right = rect.maxX - top
+        let bottom = min(bottomRadius, rect.height - top, (right - left) / 2)
+        let pull = bottom * 0.4
+
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addQuadCurve(to: CGPoint(x: left, y: rect.minY + top), control: CGPoint(x: left, y: rect.minY))
+        path.addLine(to: CGPoint(x: left, y: rect.maxY - bottom))
+        path.addCurve(to: CGPoint(x: left + bottom, y: rect.maxY),
+                      control1: CGPoint(x: left, y: rect.maxY - pull),
+                      control2: CGPoint(x: left + pull, y: rect.maxY))
+        path.addLine(to: CGPoint(x: right - bottom, y: rect.maxY))
+        path.addCurve(to: CGPoint(x: right, y: rect.maxY - bottom),
+                      control1: CGPoint(x: right - pull, y: rect.maxY),
+                      control2: CGPoint(x: right, y: rect.maxY - pull))
+        path.addLine(to: CGPoint(x: right, y: rect.minY + top))
+        path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.minY), control: CGPoint(x: right, y: rect.minY))
+        path.closeSubpath()
+        return path
     }
 }
 

@@ -31,6 +31,7 @@ final class DockSettings: ObservableObject {
     @Published var enableIsland: Bool { didSet { store.set(enableIsland, forKey: Keys.enableIsland) } }
     @Published var islandWithoutNotch: IslandWithoutNotchMode { didSet { store.set(islandWithoutNotch.rawValue, forKey: Keys.islandWithoutNotch) } }
     @Published var hideIslandInFullScreen: Bool { didSet { store.set(hideIslandInFullScreen, forKey: Keys.hideIslandInFullScreen) } }
+    @Published var islandFinish: IslandFinish { didSet { store.set(islandFinish.rawValue, forKey: Keys.islandFinish) } }
     @Published var showNotchPet: Bool { didSet { store.set(showNotchPet, forKey: Keys.showNotchPet) } }
     @Published var showVisualizer: Bool { didSet { store.set(showVisualizer, forKey: Keys.showVisualizer) } }
     @Published var visualizerStyle: VisualizerStyle { didSet { store.set(visualizerStyle.rawValue, forKey: Keys.visualizerStyle) } }
@@ -54,6 +55,7 @@ final class DockSettings: ObservableObject {
         static let enableIsland = "enableIsland"
         static let islandWithoutNotch = "islandWithoutNotch"
         static let hideIslandInFullScreen = "hideIslandInFullScreen"
+        static let islandFinish = "islandFinish"
         static let showNotchPet = "showNotchPet"
         static let showVisualizer = "showVisualizer"
         static let visualizerStyle = "visualizerStyle"
@@ -114,6 +116,7 @@ final class DockSettings: ObservableObject {
         enableIsland = store.bool(forKey: Keys.enableIsland)
         islandWithoutNotch = store.string(forKey: Keys.islandWithoutNotch).flatMap(IslandWithoutNotchMode.init) ?? .alwaysShown
         hideIslandInFullScreen = store.bool(forKey: Keys.hideIslandInFullScreen)
+        islandFinish = store.string(forKey: Keys.islandFinish).flatMap(IslandFinish.init) ?? .black
         showNotchPet = store.bool(forKey: Keys.showNotchPet)
         showVisualizer = store.bool(forKey: Keys.showVisualizer)
         visualizerStyle = store.string(forKey: Keys.visualizerStyle).flatMap(VisualizerStyle.init) ?? .bars

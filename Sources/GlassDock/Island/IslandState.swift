@@ -125,6 +125,20 @@ enum IslandWithoutNotchMode: String, CaseIterable, Identifiable {
     }
 }
 
+enum IslandFinish: String, CaseIterable, Identifiable {
+    case black, liquidGlass, dynamicGlass
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .black: return "Black"
+        case .liquidGlass: return "Liquid Glass"
+        case .dynamicGlass: return "Dynamic Glass"
+        }
+    }
+}
+
 final class IslandState: ObservableObject {
     @Published var expanded = false
     @Published var tab: IslandTab = .home

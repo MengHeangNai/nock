@@ -22,6 +22,9 @@ struct SettingsView: View {
                 Picker("Island on displays without a notch", selection: $settings.islandWithoutNotch) {
                     ForEach(IslandWithoutNotchMode.allCases) { Text($0.title).tag($0) }
                 }
+                Picker("Island finish", selection: $settings.islandFinish) {
+                    ForEach(IslandFinish.allCases) { Text($0.title).tag($0) }
+                }
                 Toggle("Hide in full-screen apps", isOn: $settings.hideIslandInFullScreen)
                 Toggle("Show notch pet", isOn: $settings.showNotchPet)
                 Toggle("Show music visualizer", isOn: $settings.showVisualizer)

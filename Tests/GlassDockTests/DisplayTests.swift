@@ -134,6 +134,15 @@ final class IslandWithoutNotchModeTests: XCTestCase {
     }
 }
 
+final class IslandFinishTests: XCTestCase {
+    func testEveryFinishSurvivesASaveAndLoad() {
+        for finish in IslandFinish.allCases {
+            XCTAssertEqual(IslandFinish(rawValue: finish.rawValue), finish)
+        }
+        XCTAssertNil(IslandFinish(rawValue: "frosted"))
+    }
+}
+
 final class IslandFullScreenTests: XCTestCase {
     private let builtIn = "0A1B2C3D-0000-4000-8000-000000000001"
     private let external = "0A1B2C3D-0000-4000-8000-000000000002"
