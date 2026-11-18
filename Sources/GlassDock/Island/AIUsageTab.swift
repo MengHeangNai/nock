@@ -3,20 +3,22 @@ import SwiftUI
 struct AIUsageTab: View {
     @ObservedObject var usage: AIUsageService
     @ObservedObject var settings: DockSettings
-
-    private static let claudeTint = Color(red: 0.85, green: 0.47, blue: 0.34)
+    @ObservedObject var agents: AgentActivityMonitor
 
     var body: some View {
         HStack(spacing: 12) {
             claudeCard
             codexCard
+            if !agents.sessions.isEmpty {
+                activeCard
+            }
         }
         .onAppear { usage.start() }
         .onDisappear { usage.stop() }
     }
 
     private var claudeCard: some View {
-        UsageCard(title: "Claude Code", symbol: "asterisk", tint: Self.claudeTint,
+        UsageCard(title: CodingAgent.claude.title, symbol: CodingAgent.claude.symbol, tint: CodingAgent.claude.tint,
                   plan: usage.claudeLimits?.plan, lastActivity: usage.claude?.lastActivity) {
             if let limits = usage.claudeLimits, limits.fiveHour != nil || limits.weekly != nil {
                 if let percent = limits.fiveHour {
@@ -45,7 +47,7 @@ struct AIUsageTab: View {
     }
 
     private var codexCard: some View {
-        UsageCard(title: "Codex", symbol: "terminal", tint: .white,
+        UsageCard(title: CodingAgent.codex.title, symbol: CodingAgent.codex.symbol, tint: CodingAgent.codex.tint,
                   plan: usage.codex?.plan, lastActivity: usage.codex?.lastActivity) {
             if let codex = usage.codex, codex.primaryPercent != nil || codex.weeklyPercent != nil {
                 if let percent = codex.primaryPercent {
@@ -57,6 +59,17 @@ struct AIUsageTab: View {
             } else {
                 TokenSummary(usage: usage.codex, loaded: usage.hasLoaded, toolName: "Codex")
             }
+        }
+    }
+
+    private var activeCard: some View {
+        UsageCard(title: "Active now", symbol: "bolt.fill", tint: .white, plan: nil, lastActivity: nil) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(agents.sessions) { AgentSessionRow(session: $0) }
+                }
+            }
+            .scrollIndicators(.never)
         }
     }
 }
@@ -134,7 +147,6 @@ private struct LimitRow: View {
         }
     }
 
-    /// "Resets in 1 hr 19 min" within a day, otherwise "Resets Thu".
     static func resetText(_ date: Date, now: Date) -> String {
         let seconds = Int(date.timeIntervalSince(now))
         guard seconds > 0 else { return "Resetting now" }
@@ -147,7 +159,6 @@ private struct LimitRow: View {
     }
 }
 
-/// Token counts from local logs, used when plan limits aren't available.
 private struct TokenSummary: View {
     let usage: AIUsageService.ToolUsage?
     let loaded: Bool

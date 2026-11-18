@@ -8,10 +8,16 @@ final class IslandPanel: NSPanel {
 }
 
 final class IslandWindowController {
+    private static let menuBarRefreshTicks = 75
+
     private let context: IslandContext
     private var windows: [CGDirectDisplayID: IslandDisplayWindow] = [:]
     private var isShown = false
     private var ticker: Timer?
+    private var ticks = 0
+    private lazy var menuBarGaps = MenuBarGapsMonitor { [weak self] gaps in
+        self?.windows.forEach { $0.value.setMenuBarGaps(gaps[$0.key]) }
+    }
     private var clickMonitor: Any?
     private var modeObserver: AnyCancellable?
     private var fullScreenObserver: AnyCancellable?
@@ -38,6 +44,12 @@ final class IslandWindowController {
         workspaceCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification,
                                     object: nil, queue: .main) { [weak self] _ in
             self?.updateFullScreen()
+            self?.refreshMenuBarGaps(rescanningApps: false)
+        }
+        for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
+            workspaceCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                self?.refreshMenuBarGaps(rescanningApps: true)
+            }
         }
     }
 
@@ -46,10 +58,11 @@ final class IslandWindowController {
         isShown = true
         context.systemHUD.start()
         context.notifications.start()
+        context.agents.start()
         sync()
 
         let ticker = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
-            self?.windows.values.forEach { $0.tick() }
+            self?.tick()
         }
         RunLoop.main.add(ticker, forMode: .common)
         self.ticker = ticker
@@ -57,6 +70,19 @@ final class IslandWindowController {
         clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             self?.windows.values.forEach { $0.handleOutsideClick() }
         }
+    }
+
+    private func tick() {
+        windows.values.forEach { $0.tick() }
+        ticks += 1
+        if ticks % Self.menuBarRefreshTicks == 0, windows.values.contains(where: \.showsWings) {
+            refreshMenuBarGaps(rescanningApps: false)
+        }
+    }
+
+    private func refreshMenuBarGaps(rescanningApps: Bool) {
+        guard isShown else { return }
+        menuBarGaps.refresh(rescanningApps: rescanningApps)
     }
 
     func closePiPs() {
@@ -67,6 +93,7 @@ final class IslandWindowController {
         isShown = false
         context.systemHUD.stop()
         context.notifications.stop()
+        context.agents.stop()
         ticker?.invalidate()
         ticker = nil
         if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
@@ -87,6 +114,7 @@ final class IslandWindowController {
             window.reposition(on: screen)
         }
         updateFullScreen()
+        refreshMenuBarGaps(rescanningApps: true)
     }
 
     private func updateFullScreen() {
@@ -118,7 +146,7 @@ final class IslandDisplayWindow {
         self.onExpand = onExpand
         state = IslandState(settings: context.settings, nowPlaying: context.nowPlaying, timer: context.timer,
                             battery: context.battery, systemHUD: context.systemHUD,
-                            notifications: context.notifications)
+                            notifications: context.notifications, agents: context.agents)
 
         panel = IslandPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel],
                             backing: .buffered, defer: false)
@@ -154,6 +182,12 @@ final class IslandDisplayWindow {
     func close() {
         space = nil
         panel.close()
+    }
+
+    var showsWings: Bool { state.showsWings }
+
+    func setMenuBarGaps(_ gaps: MenuBarGaps?) {
+        if state.menuBarGaps != gaps { state.menuBarGaps = gaps }
     }
 
     private var islandRect: NSRect {

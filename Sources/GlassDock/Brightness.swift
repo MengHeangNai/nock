@@ -18,17 +18,13 @@ enum DisplayBrightness {
     static func read(_ display: CGDirectDisplayID) -> Float? {
         var value: Float = 0
         guard let functions else { return nil }
-        let status = functions.get(display, &value)
-        HUDDiag.note("DisplayServicesGetBrightness display=\(display) status=\(status) value=\(value)") // TEMP-HUD-DIAG
-        return status == 0 ? value : nil
+        return functions.get(display, &value) == 0 ? value : nil
     }
 
     @discardableResult
     static func write(_ value: Float, to display: CGDirectDisplayID) -> Bool {
         guard let functions else { return false }
-        let status = functions.set(display, min(max(value, 0), 1))
-        HUDDiag.note("DisplayServicesSetBrightness display=\(display) value=\(value) status=\(status) readback=\(String(describing: read(display)))") // TEMP-HUD-DIAG
-        return status == 0
+        return functions.set(display, min(max(value, 0), 1)) == 0
     }
 }
 

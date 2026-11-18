@@ -47,6 +47,7 @@ final class DockSettings: ObservableObject {
         }
     }
     @Published var showNotchPet: Bool { didSet { store.set(showNotchPet, forKey: Keys.showNotchPet) } }
+    @Published var showAgentActivity: Bool { didSet { store.set(showAgentActivity, forKey: Keys.showAgentActivity) } }
     @Published var showVisualizer: Bool { didSet { store.set(showVisualizer, forKey: Keys.showVisualizer) } }
     @Published var visualizerStyle: VisualizerStyle { didSet { store.set(visualizerStyle.rawValue, forKey: Keys.visualizerStyle) } }
     @Published var lyricsMode: LyricsViewMode { didSet { store.set(lyricsMode.rawValue, forKey: Keys.lyricsMode) } }
@@ -81,6 +82,7 @@ final class DockSettings: ObservableObject {
         static let islandShoulderCurve = "islandShoulderCurve"
         static let islandCornerCurve = "islandCornerCurve"
         static let showNotchPet = "showNotchPet"
+        static let showAgentActivity = "showAgentActivity"
         static let showVisualizer = "showVisualizer"
         static let visualizerStyle = "visualizerStyle"
         static let lyricsMode = "lyricsMode"
@@ -123,6 +125,7 @@ final class DockSettings: ObservableObject {
             Keys.enableIsland: true,
             Keys.hideIslandInFullScreen: false,
             Keys.showNotchPet: true,
+            Keys.showAgentActivity: true,
             Keys.showVisualizer: true,
             Keys.animateOpening: true,
             Keys.showIndicators: true,
@@ -159,6 +162,7 @@ final class DockSettings: ObservableObject {
         islandShoulderCurve = Self.islandCurve(store.object(forKey: Keys.islandShoulderCurve) as? Double)
         islandCornerCurve = Self.islandCurve(store.object(forKey: Keys.islandCornerCurve) as? Double)
         showNotchPet = store.bool(forKey: Keys.showNotchPet)
+        showAgentActivity = store.bool(forKey: Keys.showAgentActivity)
         showVisualizer = store.bool(forKey: Keys.showVisualizer)
         visualizerStyle = store.string(forKey: Keys.visualizerStyle).flatMap(VisualizerStyle.init) ?? .bars
         lyricsMode = store.string(forKey: Keys.lyricsMode).flatMap(LyricsViewMode.init) ?? .karaoke

@@ -48,7 +48,6 @@ final class SystemHUDController: ObservableObject {
     }
 
     private func refresh() {
-        HUDDiag.note("refresh: setting=\(replacesSystemHUD) island=\(isIslandShown) trusted=\(AppWindows.isTrusted)") // TEMP-HUD-DIAG
         let wasEnabled = access.isEnabled
         updateAccess()
         guard access.isEnabled != wasEnabled else { return }
@@ -72,14 +71,7 @@ final class SystemHUDController: ObservableObject {
         let next = HUDAccess.resolve(replacesSystemHUD: replacesSystemHUD, isIslandShown: isIslandShown,
                                      isTrusted: AppWindows.isTrusted) { tap.start() }
         if next != .replacing { tap.stop() }
-        setAccess(next)
-    }
-
-    private func setAccess(_ value: HUDAccess) {
-        if access != value {
-            HUDDiag.note("access \(access) -> \(value)") // TEMP-HUD-DIAG
-            access = value
-        }
+        if access != next { access = next }
     }
 
     private func refreshBrightnessDisplays() {
@@ -96,10 +88,7 @@ final class SystemHUDController: ObservableObject {
         if press.isDown, let work {
             let steps = press.isFineStep ? HUDStep.fine : HUDStep.standard
             worker.async { [weak self] in
-                guard let reading = work(steps) else {
-                    HUDDiag.note("action produced no reading key=\(press.key)") // TEMP-HUD-DIAG
-                    return
-                }
+                guard let reading = work(steps) else { return }
                 DispatchQueue.main.async { self?.show(reading) }
             }
         }
@@ -126,11 +115,9 @@ final class SystemHUDController: ObservableObject {
                 return HUDReading(kind: .volume, value: current.value, isMuted: !current.isMuted)
             }
         case .step(.brightness, let direction):
-            let cursorDisplay = displayUnderCursor()
             let builtIn = brightnessDisplays.first { CGDisplayIsBuiltin($0) != 0 }
-            let chosen = BrightnessTarget.display(underCursor: cursorDisplay, adjustable: brightnessDisplays, builtIn: builtIn)
-            HUDDiag.note("brightness cursor=\(String(describing: cursorDisplay)) adjustable=\(brightnessDisplays.sorted()) builtIn=\(String(describing: builtIn)) target=\(String(describing: chosen))") // TEMP-HUD-DIAG
-            guard let display = chosen else { return nil }
+            guard let display = BrightnessTarget.display(underCursor: displayUnderCursor(), adjustable: brightnessDisplays,
+                                                         builtIn: builtIn) else { return nil }
             return { steps in
                 guard let current = DisplayBrightness.read(display) else { return nil }
                 let target = HUDStep.next(from: current, direction: direction, steps: steps)
@@ -163,7 +150,6 @@ final class SystemHUDController: ObservableObject {
     }
 
     private func show(_ reading: HUDReading) {
-        HUDDiag.note("hud published kind=\(reading.kind) value=\(reading.value) muted=\(reading.isMuted)") // TEMP-HUD-DIAG
         if reading.kind == .volume { volume.acknowledge(reading) }
         hideWork?.cancel()
         if hud != reading { hud = reading }

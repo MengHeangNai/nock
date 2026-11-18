@@ -50,6 +50,7 @@ struct SettingsView: View {
                 }
                 Toggle("Hide in full-screen apps", isOn: $settings.hideIslandInFullScreen)
                 Toggle("Show notch pet", isOn: $settings.showNotchPet)
+                Toggle("Show coding agent activity", isOn: $settings.showAgentActivity)
                 Toggle("Show music visualizer", isOn: $settings.showVisualizer)
                 Toggle("Show lyrics", isOn: $settings.showLyrics)
                 Toggle("Replace system volume & brightness HUD", isOn: $settings.replaceSystemHUD)
@@ -77,7 +78,7 @@ struct SettingsView: View {
             } header: {
                 Text("Island")
             } footer: {
-                Text("Lyrics are looked up on lrclib.net, a free lyrics library. Only the song's title, artist, album and length are sent. Plan limits use the sign-in Claude Code keeps in your Keychain (macOS asks first) and are requested only from Anthropic. System event notifications use only the status macOS reports for Bluetooth, Wi-Fi and the battery; macOS may ask once to allow Bluetooth.")
+                Text("Lyrics are looked up on lrclib.net, a free lyrics library. Only the song's title, artist, album and length are sent. Plan limits use the sign-in Claude Code keeps in your Keychain (macOS asks first) and are requested only from Anthropic. System event notifications use only the status macOS reports for Bluetooth, Wi-Fi and the battery; macOS may ask once to allow Bluetooth. Coding agent activity reads Claude Code's and Codex's session logs on this Mac and sends nothing.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

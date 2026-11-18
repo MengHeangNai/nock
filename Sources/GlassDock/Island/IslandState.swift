@@ -66,6 +66,61 @@ enum LiveActivity: Equatable {
     case charging(Int)
     case timer
     case music
+    case agent
+
+    var wingLabel: String? {
+        switch self {
+        case .timerDone: return "Done"
+        case .charging(let level): return "\(level)%"
+        case .timer, .music, .agent: return nil
+        }
+    }
+}
+
+struct WingSide: Equatable {
+    static let empty = WingSide(full: 0, compact: 0)
+
+    var full: CGFloat
+    var compact: CGFloat?
+}
+
+enum WingFit: Equatable {
+    case full, compact, belowNotch
+
+    static let leeway: CGFloat = 6
+
+    init(_ side: WingSide, gap: CGFloat?) {
+        let room = (gap ?? .infinity) - Self.leeway
+        if side.full == 0 || side.full <= room {
+            self = .full
+        } else if let compact = side.compact, compact == 0 || compact <= room {
+            self = .compact
+        } else {
+            self = .belowNotch
+        }
+    }
+
+    func width(of side: WingSide) -> CGFloat {
+        switch self {
+        case .full: return side.full
+        case .compact: return side.compact ?? 0
+        case .belowNotch: return 0
+        }
+    }
+}
+
+struct IslandWings: Equatable {
+    let side: WingSide
+    let fit: WingFit
+
+    init(left: WingSide, right: WingSide, gaps: MenuBarGaps?) {
+        side = WingSide(full: max(left.full, right.full),
+                        compact: max(left.compact ?? left.full, right.compact ?? right.full))
+        fit = WingFit(side, gap: gaps.map { min($0.left, $0.right) })
+    }
+
+    var isBelowNotch: Bool { fit == .belowNotch }
+    var width: CGFloat { fit.width(of: side) }
 }
 
 struct IslandMetrics: Equatable {
@@ -97,9 +152,20 @@ struct IslandMetrics: Equatable {
         screenTop = frame.maxY
     }
 
-    var wingWidth: CGFloat { (notchHeight * (hasNotch ? 1.6 : 2.2)).rounded() }
+    static let wingGlyphWidth: CGFloat = 16
+    static let wingLabelFont = NSFont.rounded(ofSize: 13, weight: .semibold)
+
+    var wingPadding: CGFloat { (notchHeight * 0.3).rounded() }
+    var artworkSize: CGFloat { notchHeight * 0.62 }
+    var agentWingMaxWidth: CGFloat { (notchHeight * (hasNotch ? 3.2 : 4)).rounded() }
+
+    func wingWidth(content: CGFloat) -> CGFloat {
+        content > 0 ? (content + wingPadding * 2).rounded(.up) : 0
+    }
+
     var petWingWidth: CGFloat { (notchHeight * (hasNotch ? 0.95 : 1.3)).rounded() }
     var petSize: CGSize { CGSize(width: notchWidth + petWingWidth * 2, height: notchHeight) }
+    var belowNotchSize: CGSize { CGSize(width: notchWidth, height: notchHeight * 2) }
     var expandedSize: CGSize { CGSize(width: max(840, notchWidth + 640), height: notchHeight + 200) }
     var hudSize: CGSize { CGSize(width: 300, height: notchHeight + 66) }
     var notificationSize: CGSize { CGSize(width: 300, height: notchHeight + 58) }
@@ -146,6 +212,7 @@ final class IslandState: ObservableObject {
     @Published var tab: IslandTab = .home
     @Published var metrics = IslandMetrics()
     @Published var isHiddenForFullScreen = false
+    @Published var menuBarGaps: MenuBarGaps?
     @Published private(set) var chargingFlash = false
 
     private let settings: DockSettings
@@ -154,18 +221,20 @@ final class IslandState: ObservableObject {
     private let battery: BatteryMonitor
     private let systemHUD: SystemHUDController
     private let notifications: SystemNotificationController
+    private let agents: AgentActivityMonitor
     private var cancellables = Set<AnyCancellable>()
     private var chargingWork: DispatchWorkItem?
     private var timerDoneWork: DispatchWorkItem?
 
     init(settings: DockSettings, nowPlaying: NowPlayingMonitor, timer: IslandTimer, battery: BatteryMonitor,
-         systemHUD: SystemHUDController, notifications: SystemNotificationController) {
+         systemHUD: SystemHUDController, notifications: SystemNotificationController, agents: AgentActivityMonitor) {
         self.settings = settings
         self.nowPlaying = nowPlaying
         self.timer = timer
         self.battery = battery
         self.systemHUD = systemHUD
         self.notifications = notifications
+        self.agents = agents
 
         battery.$isPluggedIn
             .removeDuplicates()
@@ -192,8 +261,10 @@ final class IslandState: ObservableObject {
     var live: LiveActivity? {
         if timer.didFinish { return .timerDone }
         if chargingFlash { return .charging(battery.level ?? 0) }
+        if agents.lead?.isWaiting == true { return .agent }
         if timer.isActive { return .timer }
         if nowPlaying.isPlaying { return .music }
+        if agents.lead != nil { return .agent }
         return nil
     }
 
@@ -202,19 +273,53 @@ final class IslandState: ObservableObject {
             && (isHiddenForFullScreen || !settings.islandWithoutNotch.showsIdlePill(hasNotch: metrics.hasNotch))
     }
 
+    var showsWings: Bool {
+        !expanded && hud == nil && notification == nil && !isIdlePillHidden && (live != nil || settings.showNotchPet)
+    }
+
     var showsPet: Bool {
-        settings.showNotchPet && !expanded && hud == nil && notification == nil && live == nil && !isIdlePillHidden
+        showsWings && live == nil
+            && IslandWings(left: WingSide(full: metrics.petWingWidth), right: .empty, gaps: menuBarGaps).fit == .full
+    }
+
+    var wings: IslandWings? {
+        live.map { live in
+            let sides = wingSides(for: live)
+            return IslandWings(left: sides.left, right: sides.right, gaps: menuBarGaps)
+        }
     }
 
     var size: CGSize {
         if expanded { return metrics.expandedSize }
         if hud != nil { return metrics.hudSize }
         if notification != nil { return metrics.notificationSize }
-        if live != nil {
-            return CGSize(width: metrics.notchWidth + metrics.wingWidth * 2, height: metrics.notchHeight)
+        if let wings {
+            if wings.isBelowNotch { return metrics.belowNotchSize }
+            return CGSize(width: metrics.notchWidth + wings.width * 2, height: metrics.notchHeight)
         }
         if showsPet { return metrics.petSize }
         return CGSize(width: metrics.notchWidth, height: metrics.notchHeight)
+    }
+
+    private func wingSides(for live: LiveActivity) -> (left: WingSide, right: WingSide) {
+        let metrics = metrics
+        let glyph = WingSide(full: metrics.wingWidth(content: IslandMetrics.wingGlyphWidth))
+        let label = { (text: String) in metrics.wingWidth(content: IslandMetrics.wingLabelFont.lineWidth(of: text)) }
+        switch live {
+        case .timerDone, .charging:
+            return (glyph, WingSide(full: label(live.wingLabel ?? ""), compact: 0))
+        case .timer:
+            return (glyph, WingSide(full: label(IslandTimer.format(timer.remaining()))))
+        case .music:
+            return (WingSide(full: metrics.wingWidth(content: metrics.artworkSize)),
+                    WingSide(full: metrics.wingWidth(content: PlayingBars.width), compact: 0))
+        case .agent:
+            guard let lead = agents.lead else { return (.empty, .empty) }
+            let status = metrics.wingWidth(content: AgentStatusWing.contentWidth(of: lead))
+            let lines = metrics.wingWidth(content: AgentLinesWing.contentWidth(of: lead, count: agents.sessions.count))
+            return (WingSide(full: min(status, metrics.agentWingMaxWidth), compact: glyph.full),
+                    WingSide(full: lines, compact: 0))
+        }
     }
 
     private func flashCharging() {
@@ -223,5 +328,23 @@ final class IslandState: ObservableObject {
         let work = DispatchWorkItem { [weak self] in self?.chargingFlash = false }
         chargingWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: work)
+    }
+}
+
+extension NSFont {
+    private static let lineWidths = NSCache<NSString, NSNumber>()
+
+    static func rounded(ofSize size: CGFloat, weight: NSFont.Weight) -> NSFont {
+        let font = NSFont.systemFont(ofSize: size, weight: weight)
+        return font.fontDescriptor.withDesign(.rounded).flatMap { NSFont(descriptor: $0, size: size) } ?? font
+    }
+
+    func lineWidth(of text: String) -> CGFloat {
+        let sample = String(text.map { $0.isNumber ? "0" : $0 })
+        let key = "\(fontName) \(pointSize) \(sample)" as NSString
+        if let width = Self.lineWidths.object(forKey: key) { return CGFloat(width.doubleValue) }
+        let width = NSAttributedString(string: sample, attributes: [.font: self]).size().width.rounded(.up) + 1
+        Self.lineWidths.setObject(NSNumber(value: Double(width)), forKey: key)
+        return width
     }
 }

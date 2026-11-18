@@ -14,6 +14,7 @@ final class IslandContext {
     let systemHUD: SystemHUDController
     let notifications: SystemNotificationController
     let keyboardSounds: KeyboardSoundController
+    let agents: AgentActivityMonitor
     let audioLevels = AudioLevelMonitor()
     let calendar = CalendarService()
     let keepAwake = KeepAwake()
@@ -42,6 +43,7 @@ final class IslandContext {
         self.systemHUD = systemHUD
         self.notifications = notifications
         self.keyboardSounds = keyboardSounds
+        agents = AgentActivityMonitor(settings: settings)
         pet = NotchPetMonitor(settings: settings, nowPlaying: nowPlaying, battery: battery, shelf: shelf)
         pip = PiPController(settings: settings)
     }
@@ -57,6 +59,7 @@ struct IslandView: View {
     @ObservedObject private var notifications: SystemNotificationController
     @ObservedObject private var pet: NotchPetMonitor
     @ObservedObject private var battery: BatteryMonitor
+    @ObservedObject private var agents: AgentActivityMonitor
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private static let maxShoulderRadius: CGFloat = 36
@@ -71,6 +74,7 @@ struct IslandView: View {
         _notifications = ObservedObject(wrappedValue: context.notifications)
         _pet = ObservedObject(wrappedValue: context.pet)
         _battery = ObservedObject(wrappedValue: context.battery)
+        _agents = ObservedObject(wrappedValue: context.agents)
     }
 
     private var contentTransition: AnyTransition {
@@ -90,6 +94,7 @@ struct IslandView: View {
                                 bottomRadius: isOpen ? min(44 * settings.islandCornerCurve, size.height * 0.45)
                                                      : metrics.notchHeight * 0.5 * settings.islandCornerCurve)
         let animation: Animation = reduceMotion ? .easeInOut(duration: 0.2) : .spring(duration: 0.35, bounce: 0.12)
+        let wingAnimation: Animation = reduceMotion ? animation : .easeOut(duration: 0.3)
         let finish = battery.lowPowerMode ? .black : settings.islandFinish
 
         ZStack(alignment: .top) {
@@ -103,9 +108,14 @@ struct IslandView: View {
             } else if let notification = state.notification {
                 notificationContent(notification, metrics: metrics)
                     .transition(contentTransition)
-            } else if let live = state.live, !state.isIdlePillHidden {
-                collapsedContent(live, metrics: metrics)
-                    .transition(contentTransition)
+            } else if let live = state.live, let wings = state.wings, !state.isIdlePillHidden {
+                if wings.isBelowNotch {
+                    dropDown(metrics, inset: metrics.wingPadding) { belowNotchContent(live, metrics: metrics) }
+                        .transition(contentTransition)
+                } else {
+                    collapsedContent(live, wings: wings, metrics: metrics)
+                        .transition(contentTransition)
+                }
             } else if state.showsPet {
                 petContent(metrics)
                     .transition(contentTransition)
@@ -129,6 +139,7 @@ struct IslandView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .foregroundStyle(.white)
         .environment(\.colorScheme, .dark)
+        .animation(wingAnimation, value: state.wings)
         .animation(animation, value: state.expanded)
         .animation(animation, value: state.live)
         .animation(animation, value: state.showsPet)
@@ -161,32 +172,43 @@ struct IslandView: View {
     }
 
     private func hudContent(_ reading: HUDReading, metrics: IslandMetrics) -> some View {
-        VStack(spacing: 0) {
-            Color.clear.frame(height: metrics.notchHeight)
-            HUDView(reading: reading)
-                .padding(.horizontal, 24)
-                .frame(maxHeight: .infinity)
-        }
+        dropDown(metrics, inset: 24) { HUDView(reading: reading) }
     }
 
     private func notificationContent(_ notification: IslandNotification, metrics: IslandMetrics) -> some View {
+        dropDown(metrics, inset: 24) { NotificationView(notification: notification) }
+    }
+
+    private func dropDown<Content: View>(_ metrics: IslandMetrics, inset: CGFloat,
+                                         @ViewBuilder content: () -> Content) -> some View {
         VStack(spacing: 0) {
             Color.clear.frame(height: metrics.notchHeight)
-            NotificationView(notification: notification)
-                .padding(.horizontal, 24)
+            content()
+                .padding(.horizontal, inset)
                 .frame(maxHeight: .infinity)
         }
     }
 
-    private func collapsedContent(_ live: LiveActivity, metrics: IslandMetrics) -> some View {
+    private func collapsedContent(_ live: LiveActivity, wings: IslandWings, metrics: IslandMetrics) -> some View {
         HStack(spacing: 0) {
-            leftWing(live, height: metrics.notchHeight)
-                .frame(width: metrics.wingWidth)
+            leftWing(live, isCompact: wings.fit == .compact)
+                .padding(.horizontal, metrics.wingPadding)
+                .frame(width: wings.width, alignment: .leading)
             Spacer(minLength: metrics.notchWidth)
-            rightWing(live)
-                .frame(width: metrics.wingWidth)
+            if wings.fit == .full {
+                rightWing(live)
+                    .padding(.horizontal, metrics.wingPadding)
+                    .frame(width: wings.width, alignment: .trailing)
+            }
         }
         .frame(height: metrics.notchHeight)
+    }
+
+    private func belowNotchContent(_ live: LiveActivity, metrics: IslandMetrics) -> some View {
+        HStack(spacing: metrics.wingPadding) {
+            leftWing(live, isCompact: false)
+            rightWing(live)
+        }
     }
 
     private func petContent(_ metrics: IslandMetrics) -> some View {
@@ -199,17 +221,27 @@ struct IslandView: View {
     }
 
     @ViewBuilder
-    private func leftWing(_ live: LiveActivity, height: CGFloat) -> some View {
+    private func leftWing(_ live: LiveActivity, isCompact: Bool) -> some View {
         switch live {
         case .music:
-            ArtworkView(nowPlaying: nowPlaying, size: height * 0.62)
+            ArtworkView(nowPlaying: nowPlaying, size: state.metrics.artworkSize)
         case .timer:
-            Image(systemName: "timer").foregroundStyle(.orange)
+            wingGlyph("timer", color: .orange)
         case .timerDone:
-            Image(systemName: "bell.fill").foregroundStyle(.orange)
+            wingGlyph("bell.fill", color: .orange)
         case .charging:
-            Image(systemName: "bolt.fill").foregroundStyle(.green)
+            wingGlyph("bolt.fill", color: .green)
+        case .agent:
+            if let lead = agents.lead {
+                AgentStatusWing(session: lead, count: agents.sessions.count, isCompact: isCompact)
+            }
         }
+    }
+
+    private func wingGlyph(_ symbol: String, color: Color) -> some View {
+        Image(systemName: symbol)
+            .foregroundStyle(color)
+            .frame(width: IslandMetrics.wingGlyphWidth)
     }
 
     @ViewBuilder
@@ -220,14 +252,18 @@ struct IslandView: View {
         case .timer:
             TimelineView(.periodic(from: .now, by: 0.5)) { context in
                 Text(IslandTimer.format(timer.remaining(at: context.date)))
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .font(Font(IslandMetrics.wingLabelFont))
                     .monospacedDigit()
                     .foregroundStyle(timer.isPaused ? Color.secondary : Color.orange)
             }
-        case .timerDone:
-            Text("Done").font(.system(size: 13, weight: .semibold)).foregroundStyle(.orange)
-        case .charging(let level):
-            Text("\(level)%").font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundStyle(.green)
+        case .timerDone, .charging:
+            Text(live.wingLabel ?? "")
+                .font(Font(IslandMetrics.wingLabelFont))
+                .foregroundStyle(live == .timerDone ? Color.orange : Color.green)
+        case .agent:
+            if let lead = agents.lead {
+                AgentLinesWing(session: lead, count: agents.sessions.count)
+            }
         }
     }
 
@@ -310,7 +346,7 @@ struct IslandView: View {
         case .clipboard: ClipboardTab(clipboard: c.clipboard)
         case .notes: NotesTab(notes: c.notes)
         case .terminal: TerminalTab(terminal: c.terminal)
-        case .aiUsage: AIUsageTab(usage: c.aiUsage, settings: c.settings)
+        case .aiUsage: AIUsageTab(usage: c.aiUsage, settings: c.settings, agents: c.agents)
         case .colorPicker: ColorPickerTab(colors: c.colors)
         case .keepAwake: KeepAwakeTab(keepAwake: c.keepAwake)
         case .downloads: DownloadsTab(downloads: c.downloads)
@@ -360,16 +396,20 @@ private struct IslandShape: Shape {
 }
 
 struct PlayingBars: View {
+    static let barWidth: CGFloat = 3
+    private static let barGap: CGFloat = 2
+    static let width = CGFloat(AudioLevelMonitor.bandCount) * (barWidth + barGap) - barGap
+
     var color: Color = .white
     @ObservedObject var audio: AudioLevelMonitor
 
     var body: some View {
-        HStack(alignment: .center, spacing: 2) {
+        HStack(alignment: .center, spacing: Self.barGap) {
             ForEach(0..<AudioLevelMonitor.bandCount, id: \.self) { index in
                 if audio.isCapturing {
                     Capsule()
                         .fill(color)
-                        .frame(width: 3, height: 4 + 12 * audio.levels[index])
+                        .frame(width: Self.barWidth, height: 4 + 12 * audio.levels[index])
                 } else {
                     PlayingBar(color: color, duration: [0.42, 0.55, 0.36, 0.5][index], low: 4, high: [12, 15, 10, 13][index])
                 }
@@ -391,7 +431,7 @@ private struct PlayingBar: View {
     var body: some View {
         Capsule()
             .fill(color)
-            .frame(width: 3, height: up ? high : low)
+            .frame(width: PlayingBars.barWidth, height: up ? high : low)
             .onAppear {
                 withAnimation(.easeInOut(duration: duration).repeatForever(autoreverses: true)) { up = true }
             }

@@ -71,10 +71,9 @@ final class IslandPetShapeTests: XCTestCase {
                             safeAreaTop: 0, topLeftWidth: nil, topRightWidth: nil)
     }
 
-    func testThePetWingIsAboutHalfAsWideAsAMusicWing() {
+    func testThePetWingFitsThePet() {
         let notched = metrics(hasNotch: true)
         XCTAssertEqual(notched.petWingWidth, 30)
-        XCTAssertLessThan(notched.petWingWidth, notched.wingWidth * 0.6)
         XCTAssertGreaterThanOrEqual(notched.petWingWidth, notched.notchHeight * 0.78)
     }
 
@@ -90,6 +89,87 @@ final class IslandPetShapeTests: XCTestCase {
             XCTAssertEqual(metrics.petSize.width, metrics.notchWidth + metrics.petWingWidth * 2)
             XCTAssertEqual(metrics.petSize.height, metrics.notchHeight)
         }
+    }
+}
+
+final class IslandWingTests: XCTestCase {
+    private let status = WingSide(full: 120, compact: 38)
+    private let lines = WingSide(full: 70, compact: 0)
+    private let artwork = WingSide(full: 44)
+
+    func testWithoutAMeasuredMenuBarEverySideShowsInFull() {
+        XCTAssertEqual(WingFit(status, gap: nil), .full)
+        XCTAssertEqual(WingFit(artwork, gap: nil), .full)
+    }
+
+    func testASideFitsOnlyWithTheLeewayToSpare() {
+        XCTAssertEqual(WingFit(status, gap: 120 + WingFit.leeway), .full)
+        XCTAssertEqual(WingFit(status, gap: 120 + WingFit.leeway - 1), .compact)
+    }
+
+    func testTheCompactFormIsUsedWhenOnlyItFits() {
+        XCTAssertEqual(WingFit(status, gap: 50), .compact)
+        XCTAssertEqual(WingFit(lines, gap: 20), .compact)
+    }
+
+    func testASideWithNoRoomEvenForItsCompactFormMovesBelowTheNotch() {
+        XCTAssertEqual(WingFit(status, gap: 30), .belowNotch)
+        XCTAssertEqual(WingFit(artwork, gap: 40), .belowNotch)
+    }
+
+    func testDroppingTheContentAlwaysFitsAndAnEmptySideNeverMoves() {
+        XCTAssertEqual(WingFit(lines, gap: -10), .compact)
+        XCTAssertEqual(WingFit(.empty, gap: -10), .full)
+    }
+
+    func testBothSidesAreAsWideAsTheWiderContent() {
+        let agent = IslandWings(left: status, right: .empty, gaps: nil)
+        XCTAssertEqual(agent.fit, .full)
+        XCTAssertEqual(agent.width, 120)
+        XCTAssertEqual(IslandWings(left: artwork, right: lines, gaps: nil).width, 70)
+    }
+
+    func testTheFullWingsShowOnlyWhenTheyFitOnBothSides() {
+        XCTAssertEqual(IslandWings(left: status, right: lines, gaps: MenuBarGaps(left: 126, right: 126)).fit, .full)
+        XCTAssertEqual(IslandWings(left: status, right: lines, gaps: MenuBarGaps(left: 400, right: 125)).fit, .compact)
+    }
+
+    func testBothSidesShrinkToTheWiderCompactForm() {
+        let agent = IslandWings(left: status, right: lines, gaps: MenuBarGaps(left: 50, right: 400))
+        XCTAssertEqual(agent.fit, .compact)
+        XCTAssertEqual(agent.width, 38)
+        let music = IslandWings(left: artwork, right: lines, gaps: MenuBarGaps(left: 400, right: 60))
+        XCTAssertEqual(music.fit, .compact)
+        XCTAssertEqual(music.width, 44)
+    }
+
+    func testBelowTheNotchNeitherSideWidensTheMenuBarBand() {
+        let wings = IslandWings(left: artwork, right: lines, gaps: MenuBarGaps(left: 400, right: 20))
+        XCTAssertTrue(wings.isBelowNotch)
+        XCTAssertEqual(wings.width, 0)
+    }
+
+    func testThePetNeedsItsWingOnBothSides() {
+        let pet = WingSide(full: 30)
+        XCTAssertEqual(IslandWings(left: pet, right: .empty, gaps: MenuBarGaps(left: 36, right: 36)).fit, .full)
+        XCTAssertEqual(IslandWings(left: pet, right: .empty, gaps: MenuBarGaps(left: 400, right: 35)).fit, .belowNotch)
+    }
+
+    func testAWingIsItsContentPlusPaddingOnBothSides() {
+        let metrics = IslandMetrics(frame: CGRect(x: 0, y: 0, width: 2056, height: 1329),
+                                    visibleFrame: CGRect(x: 0, y: 0, width: 2056, height: 1291),
+                                    safeAreaTop: 38, topLeftWidth: 918, topRightWidth: 918)
+        XCTAssertEqual(metrics.wingPadding, 11)
+        XCTAssertEqual(metrics.wingWidth(content: 16), 38)
+        XCTAssertEqual(metrics.wingWidth(content: 0), 0)
+        XCTAssertEqual(metrics.agentWingMaxWidth, 122)
+    }
+
+    func testDigitsAreMeasuredAsZerosSoCountsDoNotJitter() {
+        let font = IslandMetrics.wingLabelFont
+        XCTAssertEqual(font.lineWidth(of: "+11 −7"), font.lineWidth(of: "+80 −3"))
+        XCTAssertLessThan(font.lineWidth(of: "+9"), font.lineWidth(of: "+10"))
+        XCTAssertLessThan(font.lineWidth(of: "Thinking"), font.lineWidth(of: "Editing KeyboardSoundController.swift"))
     }
 }
 

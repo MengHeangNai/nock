@@ -26,12 +26,10 @@ final class MediaKeyTap {
             return Unmanaged<MediaKeyTap>.fromOpaque(info).takeUnretainedValue().receive(type, event)
         }
         guard let port = CGEvent.tapCreate(tap: .cghidEventTap, place: .headInsertEventTap, options: .defaultTap,
-                                           eventsOfInterest: 1 << Self.systemDefinedEvent.rawValue | HUDDiag.keyEventMask, callback: callback, // TEMP-HUD-DIAG
+                                           eventsOfInterest: 1 << Self.systemDefinedEvent.rawValue, callback: callback,
                                            userInfo: Unmanaged.passUnretained(self).toOpaque()) else {
-            HUDDiag.note("tap create failed trusted=\(AppWindows.isTrusted)") // TEMP-HUD-DIAG
             return false
         }
-        HUDDiag.note("tap created location=hid place=head option=default") // TEMP-HUD-DIAG
         let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, port, 0)
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         CGEvent.tapEnable(tap: port, enable: true)
@@ -42,7 +40,6 @@ final class MediaKeyTap {
 
     func stop() {
         guard let port else { return }
-        HUDDiag.note("tap removed") // TEMP-HUD-DIAG
         CGEvent.tapEnable(tap: port, enable: false)
         if let source { CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes) }
         CFMachPortInvalidate(port)
@@ -52,17 +49,13 @@ final class MediaKeyTap {
 
     private func receive(_ type: CGEventType, _ event: CGEvent) -> Unmanaged<CGEvent>? {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-            HUDDiag.note("tap disabled by \(type == .tapDisabledByTimeout ? "timeout" : "user input"), re-enabling") // TEMP-HUD-DIAG
             if let port { CGEvent.tapEnable(tap: port, enable: true) }
             return Unmanaged.passUnretained(event)
         }
-        HUDDiag.raw(type, event) // TEMP-HUD-DIAG
         guard type == Self.systemDefinedEvent, let system = NSEvent(cgEvent: event),
               let press = MediaKeyPress(subtype: Int(system.subtype.rawValue), data1: system.data1,
                                         modifiers: MediaKeyModifiers(event.flags)) else { return Unmanaged.passUnretained(event) }
-        let consumed = handler(press)
-        HUDDiag.decision(press, consumed: consumed) // TEMP-HUD-DIAG
-        return consumed ? nil : Unmanaged.passUnretained(event)
+        return handler(press) ? nil : Unmanaged.passUnretained(event)
     }
 }
 

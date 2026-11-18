@@ -1,17 +1,12 @@
 import Foundation
 
-/// Reads Claude Code and Codex usage from their local log files. Nothing is sent anywhere.
-///  - Claude Code: ~/.claude/projects/**/*.jsonl (token usage per reply)
-///  - Codex: ~/.codex/sessions/**/*.jsonl (token counts, plus rate-limit percentages when present)
 final class AIUsageService: ObservableObject {
     struct ToolUsage {
-        /// Tokens in the current 5-hour window (Claude Code).
         var windowTokens = 0
         var windowResets: Date?
         var todayTokens = 0
         var todayRequests = 0
         var lastActivity: Date?
-        /// Codex's own limit figures, when its logs include them.
         var primaryPercent: Double?
         var primaryResets: Date?
         var weeklyPercent: Double?
@@ -21,7 +16,6 @@ final class AIUsageService: ObservableObject {
 
     @Published private(set) var claude: ToolUsage?
     @Published private(set) var codex: ToolUsage?
-    /// Claude Code plan limits from Anthropic; only loaded when turned on in Settings.
     @Published private(set) var claudeLimits: ClaudeLimits.Result?
     @Published private(set) var claudeLimitsMessage: String?
     @Published private(set) var isLoading = false
@@ -75,18 +69,16 @@ final class AIUsageService: ObservableObject {
         }
     }
 
-    // MARK: Claude Code
-
     private static func loadClaude() -> ToolUsage? {
-        let root = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects")
-        guard FileManager.default.fileExists(atPath: root.path) else { return nil }
+        let roots = claudeProjectRoots()
+        guard !roots.isEmpty else { return nil }
 
         let now = Date()
         let since = now.addingTimeInterval(-30 * 3600)
         var seen = Set<String>()
         var entries: [(date: Date, tokens: Int)] = []
 
-        for file in recentFiles(in: root, since: since) {
+        for file in roots.flatMap({ recentFiles(in: $0, since: since) }) {
             guard let text = try? String(contentsOf: file, encoding: .utf8) else { continue }
             for line in text.split(separator: "\n") where line.contains("\"usage\"") {
                 guard let object = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
@@ -94,7 +86,6 @@ final class AIUsageService: ObservableObject {
                       let usage = message["usage"] as? [String: Any],
                       let date = parseDate(object["timestamp"] as? String), date >= since else { continue }
 
-                // Streaming writes the same reply more than once; count each reply once.
                 let key = "\(message["id"] as? String ?? "")|\(object["requestId"] as? String ?? "")"
                 if key != "|", !seen.insert(key).inserted { continue }
 
@@ -112,7 +103,6 @@ final class AIUsageService: ObservableObject {
         }
         result.lastActivity = entries.map(\.date).max()
 
-        // A 5-hour window starts at the hour of its first message.
         var windowStart: Date?
         var windowTokens = 0
         for entry in entries.sorted(by: { $0.date < $1.date }) {
@@ -130,10 +120,8 @@ final class AIUsageService: ObservableObject {
         return result
     }
 
-    // MARK: Codex
-
     private static func loadCodex() -> ToolUsage? {
-        let root = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/sessions")
+        let root = codexSessionsRoot
         guard FileManager.default.fileExists(atPath: root.path) else { return nil }
 
         let now = Date()
@@ -180,7 +168,6 @@ final class AIUsageService: ObservableObject {
                 } else if let seconds = (window["resets_in_seconds"] as? NSNumber)?.doubleValue {
                     resets = latestLimits.date.addingTimeInterval(seconds)
                 }
-                // The window has reset since the last log entry.
                 if let resets, resets < now { return (0, nil) }
                 return (percent, resets)
             }
@@ -193,11 +180,25 @@ final class AIUsageService: ObservableObject {
         return result
     }
 
-    // MARK: Helpers
+    static let codexSessionsRoot = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/sessions")
 
-    private static func recentFiles(in root: URL, since: Date) -> [URL] {
+    static func claudeProjectRoots() -> [URL] {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        var configs = (try? FileManager.default.contentsOfDirectory(at: home, includingPropertiesForKeys: nil))?
+            .filter { $0.lastPathComponent.hasPrefix(".claude") } ?? []
+        if let configured = ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"], !configured.isEmpty {
+            configs.insert(URL(fileURLWithPath: (configured as NSString).expandingTildeInPath), at: 0)
+        }
+        var seen = Set<String>()
+        return configs
+            .map { $0.appendingPathComponent("projects").standardizedFileURL }
+            .filter { FileManager.default.fileExists(atPath: $0.path) && seen.insert($0.path).inserted }
+    }
+
+    static func recentFiles(in root: URL, since: Date, includingSubfolders: Bool = true) -> [URL] {
         guard let enumerator = FileManager.default.enumerator(
-            at: root, includingPropertiesForKeys: [.contentModificationDateKey], options: [.skipsHiddenFiles]
+            at: root, includingPropertiesForKeys: [.contentModificationDateKey],
+            options: includingSubfolders ? [.skipsHiddenFiles] : [.skipsHiddenFiles, .skipsSubdirectoryDescendants]
         ) else { return [] }
         var files: [URL] = []
         for case let url as URL in enumerator where url.pathExtension == "jsonl" {
@@ -214,7 +215,7 @@ final class AIUsageService: ObservableObject {
     }()
     private static let plainFormatter = ISO8601DateFormatter()
 
-    private static func parseDate(_ string: String?) -> Date? {
+    static func parseDate(_ string: String?) -> Date? {
         guard let string else { return nil }
         return fractionalFormatter.date(from: string) ?? plainFormatter.date(from: string)
     }
