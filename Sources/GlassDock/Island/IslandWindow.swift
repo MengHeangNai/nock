@@ -193,7 +193,7 @@ final class IslandDisplayWindow {
     private var islandRect: NSRect {
         let size = state.size
         let metrics = state.metrics
-        return NSRect(x: metrics.centerX - size.width / 2, y: metrics.screenTop - size.height,
+        return NSRect(x: metrics.centerX + state.xOffset - size.width / 2, y: metrics.screenTop - size.height,
                       width: size.width, height: size.height)
     }
 

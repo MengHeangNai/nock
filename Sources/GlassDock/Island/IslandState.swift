@@ -103,24 +103,30 @@ enum WingFit: Equatable {
     func width(of side: WingSide) -> CGFloat {
         switch self {
         case .full: return side.full
-        case .compact: return side.compact ?? 0
+        case .compact: return side.compact ?? side.full
         case .belowNotch: return 0
         }
+    }
+
+    func worst(_ other: WingFit) -> WingFit {
+        (self == .belowNotch || other == .belowNotch) ? .belowNotch : (self == .compact || other == .compact) ? .compact : .full
     }
 }
 
 struct IslandWings: Equatable {
-    let side: WingSide
+    let left: WingSide
+    let right: WingSide
     let fit: WingFit
 
     init(left: WingSide, right: WingSide, gaps: MenuBarGaps?) {
-        side = WingSide(full: max(left.full, right.full),
-                        compact: max(left.compact ?? left.full, right.compact ?? right.full))
-        fit = WingFit(side, gap: gaps.map { min($0.left, $0.right) })
+        self.left = left
+        self.right = right
+        fit = WingFit(left, gap: gaps?.left).worst(WingFit(right, gap: gaps?.right))
     }
 
     var isBelowNotch: Bool { fit == .belowNotch }
-    var width: CGFloat { fit.width(of: side) }
+    var leftWidth: CGFloat { fit.width(of: left) }
+    var rightWidth: CGFloat { fit.width(of: right) }
 }
 
 struct IslandMetrics: Equatable {
@@ -159,13 +165,13 @@ struct IslandMetrics: Equatable {
     var artworkSize: CGFloat { notchHeight * 0.62 }
     var agentWingMaxWidth: CGFloat { (notchHeight * (hasNotch ? 3.2 : 4)).rounded() }
 
-    func wingWidth(content: CGFloat) -> CGFloat {
-        content > 0 ? (content + wingPadding * 2).rounded(.up) : 0
+    func wingWidth(content: CGFloat, inner: CGFloat? = nil) -> CGFloat {
+        content > 0 ? (content + wingPadding + (inner ?? wingPadding)).rounded(.up) : 0
     }
 
     var petWingWidth: CGFloat { (notchHeight * (hasNotch ? 0.95 : 1.3)).rounded() }
     var petSize: CGSize { CGSize(width: notchWidth + petWingWidth * 2, height: notchHeight) }
-    var belowNotchSize: CGSize { CGSize(width: notchWidth, height: notchHeight * 2) }
+    var belowNotchSize: CGSize { CGSize(width: notchWidth, height: notchHeight + artworkSize + wingPadding) }
     var expandedSize: CGSize { CGSize(width: max(840, notchWidth + 640), height: notchHeight + 200) }
     var hudSize: CGSize { CGSize(width: 300, height: notchHeight + 66) }
     var notificationSize: CGSize { CGSize(width: 300, height: notchHeight + 58) }
@@ -279,7 +285,8 @@ final class IslandState: ObservableObject {
 
     var showsPet: Bool {
         showsWings && live == nil
-            && IslandWings(left: WingSide(full: metrics.petWingWidth), right: .empty, gaps: menuBarGaps).fit == .full
+            && IslandWings(left: WingSide(full: metrics.petWingWidth), right: WingSide(full: metrics.petWingWidth),
+                    gaps: menuBarGaps).fit == .full
     }
 
     var wings: IslandWings? {
@@ -295,10 +302,16 @@ final class IslandState: ObservableObject {
         if notification != nil { return metrics.notificationSize }
         if let wings {
             if wings.isBelowNotch { return metrics.belowNotchSize }
-            return CGSize(width: metrics.notchWidth + wings.width * 2, height: metrics.notchHeight)
+            return CGSize(width: metrics.notchWidth + wings.leftWidth + wings.rightWidth, height: metrics.notchHeight)
         }
         if showsPet { return metrics.petSize }
         return CGSize(width: metrics.notchWidth, height: metrics.notchHeight)
+    }
+
+    /// The wings can differ in width, so the island shifts to keep its notch part over the real notch.
+    var xOffset: CGFloat {
+        guard !expanded, hud == nil, notification == nil, let wings, !wings.isBelowNotch else { return 0 }
+        return (wings.rightWidth - wings.leftWidth) / 2
     }
 
     private func wingSides(for live: LiveActivity) -> (left: WingSide, right: WingSide) {
@@ -311,8 +324,8 @@ final class IslandState: ObservableObject {
         case .timer:
             return (glyph, WingSide(full: label(IslandTimer.format(timer.remaining()))))
         case .music:
-            return (WingSide(full: metrics.wingWidth(content: metrics.artworkSize)),
-                    WingSide(full: metrics.wingWidth(content: PlayingBars.width), compact: 0))
+            return (WingSide(full: metrics.wingWidth(content: metrics.artworkSize, inner: metrics.wingPadding / 2)),
+                    WingSide(full: metrics.wingWidth(content: PlayingBars.width, inner: metrics.wingPadding / 2), compact: 0))
         case .agent:
             guard let lead = agents.lead else { return (.empty, .empty) }
             let status = metrics.wingWidth(content: AgentStatusWing.contentWidth(of: lead))

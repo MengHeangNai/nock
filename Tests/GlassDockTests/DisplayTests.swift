@@ -122,37 +122,40 @@ final class IslandWingTests: XCTestCase {
         XCTAssertEqual(WingFit(.empty, gap: -10), .full)
     }
 
-    func testBothSidesAreAsWideAsTheWiderContent() {
-        let agent = IslandWings(left: status, right: .empty, gaps: nil)
+    func testEachSideIsAsWideAsItsOwnContent() {
+        let agent = IslandWings(left: status, right: lines, gaps: nil)
         XCTAssertEqual(agent.fit, .full)
-        XCTAssertEqual(agent.width, 120)
-        XCTAssertEqual(IslandWings(left: artwork, right: lines, gaps: nil).width, 70)
+        XCTAssertEqual(agent.leftWidth, 120)
+        XCTAssertEqual(agent.rightWidth, 70)
     }
 
-    func testTheFullWingsShowOnlyWhenTheyFitOnBothSides() {
-        XCTAssertEqual(IslandWings(left: status, right: lines, gaps: MenuBarGaps(left: 126, right: 126)).fit, .full)
-        XCTAssertEqual(IslandWings(left: status, right: lines, gaps: MenuBarGaps(left: 400, right: 125)).fit, .compact)
+    func testEachSideIsCheckedAgainstItsOwnGap() {
+        XCTAssertEqual(IslandWings(left: status, right: lines, gaps: MenuBarGaps(left: 126, right: 76)).fit, .full)
+        XCTAssertEqual(IslandWings(left: status, right: lines, gaps: MenuBarGaps(left: 400, right: 75)).fit, .compact)
+        XCTAssertEqual(IslandWings(left: status, right: lines, gaps: MenuBarGaps(left: 125, right: 400)).fit, .compact)
     }
 
-    func testBothSidesShrinkToTheWiderCompactForm() {
+    func testTheCompactFormShrinksEverySide() {
         let agent = IslandWings(left: status, right: lines, gaps: MenuBarGaps(left: 50, right: 400))
         XCTAssertEqual(agent.fit, .compact)
-        XCTAssertEqual(agent.width, 38)
+        XCTAssertEqual(agent.leftWidth, 38)
+        XCTAssertEqual(agent.rightWidth, 0)
         let music = IslandWings(left: artwork, right: lines, gaps: MenuBarGaps(left: 400, right: 60))
         XCTAssertEqual(music.fit, .compact)
-        XCTAssertEqual(music.width, 44)
+        XCTAssertEqual(music.leftWidth, 44)
     }
 
     func testBelowTheNotchNeitherSideWidensTheMenuBarBand() {
-        let wings = IslandWings(left: artwork, right: lines, gaps: MenuBarGaps(left: 400, right: 20))
+        let wings = IslandWings(left: artwork, right: lines, gaps: MenuBarGaps(left: 20, right: 400))
         XCTAssertTrue(wings.isBelowNotch)
-        XCTAssertEqual(wings.width, 0)
+        XCTAssertEqual(wings.leftWidth, 0)
+        XCTAssertEqual(wings.rightWidth, 0)
     }
 
     func testThePetNeedsItsWingOnBothSides() {
         let pet = WingSide(full: 30)
-        XCTAssertEqual(IslandWings(left: pet, right: .empty, gaps: MenuBarGaps(left: 36, right: 36)).fit, .full)
-        XCTAssertEqual(IslandWings(left: pet, right: .empty, gaps: MenuBarGaps(left: 400, right: 35)).fit, .belowNotch)
+        XCTAssertEqual(IslandWings(left: pet, right: pet, gaps: MenuBarGaps(left: 36, right: 36)).fit, .full)
+        XCTAssertEqual(IslandWings(left: pet, right: pet, gaps: MenuBarGaps(left: 400, right: 35)).fit, .belowNotch)
     }
 
     func testAWingIsItsContentPlusPaddingOnBothSides() {

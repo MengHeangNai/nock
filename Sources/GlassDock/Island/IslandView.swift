@@ -137,6 +137,7 @@ struct IslandView: View {
             return true
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .offset(x: state.xOffset)
         .foregroundStyle(.white)
         .environment(\.colorScheme, .dark)
         .animation(wingAnimation, value: state.wings)
@@ -192,13 +193,13 @@ struct IslandView: View {
     private func collapsedContent(_ live: LiveActivity, wings: IslandWings, metrics: IslandMetrics) -> some View {
         HStack(spacing: 0) {
             leftWing(live, isCompact: wings.fit == .compact)
-                .padding(.horizontal, metrics.wingPadding)
-                .frame(width: wings.width, alignment: .leading)
+                .padding(.leading, metrics.wingPadding)
+                .frame(width: wings.leftWidth, alignment: .leading)
             Spacer(minLength: metrics.notchWidth)
             if wings.fit == .full {
                 rightWing(live)
-                    .padding(.horizontal, metrics.wingPadding)
-                    .frame(width: wings.width, alignment: .trailing)
+                    .padding(.trailing, metrics.wingPadding)
+                    .frame(width: wings.rightWidth, alignment: .trailing)
             }
         }
         .frame(height: metrics.notchHeight)
